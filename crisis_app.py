@@ -129,26 +129,30 @@ if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(5)
     with col1:
         st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
     with col2:
         st.metric("Crisis Minimum", f"${res['crisis_min']:.2f}", delta=f"{res['max_decline']:.1f}%")
     with col3:
         st.metric("Crisis Avg", f"${res['crisis_avg']:.2f}", delta=f"{res['avg_decline']:.1f}%")
-
-    st.markdown("### Post-Crisis Recovery")
-    if not res['post_crisis_data'].empty:
-        col_recovery1, col_recovery2 = st.columns(2)
-        with col_recovery1:
-            st.metric("Recovery (mean)", f"{res['recovery_percentage']:.1f}%")
-            st.caption(f"Avg close: ${res['post_crisis_avg']:.2f}")
-        with col_recovery2:
+    with col4:
+        if not res['post_crisis_data'].empty:
+            st.markdown("**Post-Crisis Recovery (Average):**")
+            st.metric("Recovery (Average)", f"{res['recovery_percentage']:.1f}%")
+            st.caption(f"Avg post-crisis close: ${res['post_crisis_avg']:.2f}")
+            st.markdown("---")
+        else:
+            st.metric("Post-Crisis Recovery", "Not enough data")
+    with col5:
+        if not res['post_crisis_data'].empty:
+            st.markdown("**Current Price Recovery**")
             st.metric("Current recovery", f"{res['current_recovery_percentage']:.1f}%")
-            st.caption(f"Current price: ${res['current_postcrisis_price']:.2f}\n"
-                    f"Diff from crisis min: ${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
-    else:
-        st.write("Not enough post-crisis data")
+            st.caption(f"Current price: ${res['current_postcrisis_price']:.2f}")
+            st.caption(f"Difference from crisis min: "
+                       f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
+        else:
+            st.metric("Post-Crisis Recovery", "Not enough data")
 
 
     st.subheader("💰 Economic Impact Analysis")
