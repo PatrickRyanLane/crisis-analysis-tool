@@ -48,9 +48,6 @@ if mitigation_end_date < mitigation_start_date:
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
 
-if "edit_index" not in st.session_state:
-    st.session_state.edit_index = None  # None means not editing an action
-
 # --- Helper functions ---
 def get_text_positions(dates, labels):
     """
@@ -78,73 +75,40 @@ def get_text_positions(dates, labels):
     return original_order_positions
 
 
-def render_response_actions_table():
-    st.subheader("🗓️ Current Response Actions (Editable)")
-    if not st.session_state.response_actions:
-        st.info("No response actions added yet.")
-        return
+def editable_actions_list():
+    st.subheader("🗓️ Editable Response Actions")
+    indices_to_delete = []
 
     for idx, action in enumerate(st.session_state.response_actions):
-        cols = st.columns([5, 1, 1])
-        cols[0].markdown(f"📅 **{action['date']}** — {action['description']}")
-        if cols[1].button("Edit", key=f"edit_{idx}"):
-            st.session_state.edit_index = idx
-            st.experimental_rerun()
-        if cols[2].button("Delete", key=f"delete_{idx}"):
-            st.session_state.response_actions.pop(idx)
-            if st.session_state.edit_index == idx:
-                st.session_state.edit_index = None
-            st.experimental_rerun()
+        cols = st.columns([3, 6, 1])
 
-
-def render_edit_form(idx):
-    action = st.session_state.response_actions[idx]
-    with st.form("edit_action_form", clear_on_submit=False):
-        edit_date = st.date_input(
-            "Edit Action Date",
-            value=action['date']
+        # Editable date input
+        new_date = cols[0].date_input(
+            label=f"Date {idx + 1}",
+            value=action['date'],
+            key=f"date_{idx}"
         )
-        edit_desc = st.text_input(
-            "Edit Action Description",
-            value=action['description']
+        # Editable text input
+        new_desc = cols[1].text_input(
+            label=f"Description {idx + 1}",
+            value=action['description'],
+            max_chars=200,
+            key=f"desc_{idx}"
         )
-        save = st.form_submit_button("Save Changes")
-        cancel = st.form_submit_button("Cancel")
+        # Delete button
+        if cols[2].button("❌", key=f"del_{idx}"):
+            indices_to_delete.append(idx)
 
-        if save:
-            if edit_desc.strip() and edit_date:
-                st.session_state.response_actions[idx] = {
-                    "date": edit_date,
-                    "description": edit_desc.strip()
-                }
-                st.session_state.edit_index = None
-                st.success("Action updated.")
-                st.experimental_rerun()
-            else:
-                st.warning("Please enter a valid date and description.")
-        elif cancel:
-            st.session_state.edit_index = None
+        # Update session state if changed
+        if new_date != action['date'] or new_desc != action['description']:
+            st.session_state.response_actions[idx] = {"date": new_date, "description": new_desc}
             st.experimental_rerun()
 
-
-def render_add_form():
-    with st.form("add_action_form", clear_on_submit=True):
-        new_action_date = st.date_input(
-            "Add New Action Date",
-            value=mitigation_start_date if mitigation_start_date else datetime.today().date(),
-        )
-        new_action_desc = st.text_input("Add New Action Description")
-        submitted = st.form_submit_button("Save New Action")
-
-        if submitted:
-            if new_action_desc.strip() and new_action_date:
-                st.session_state.response_actions.append(
-                    {"date": new_action_date, "description": new_action_desc.strip()}
-                )
-                st.success("New response action added.")
-                st.experimental_rerun()
-            else:
-                st.warning("Please enter a valid date and description.")
+    # Remove deleted actions after loop to avoid index conflicts
+    if indices_to_delete:
+        for i in sorted(indices_to_delete, reverse=True):
+            st.session_state.response_actions.pop(i)
+        st.experimental_rerun()
 
 
 # --- Stock data analysis ---
@@ -347,13 +311,28 @@ if "analysis_result" in st.session_state:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # --------- Response Actions Editable List and Forms BELOW the chart ---------
-    render_response_actions_table()
+    # --------- Editable Response Actions List BELOW the chart ---------
+    editable_actions_list()
 
-    if st.session_state.edit_index is not None:
-        render_edit_form(st.session_state.edit_index)
-    else:
-        render_add_form()
+    # --------- Add New Action Form BELOW the editable list ---------
+    with st.form("add_action_form", clear_on_submit=True):
+        new_action_date = st.date_input(
+            "Add New Action Date",
+            value=mitigation_start_date if mitigation_start_date else datetime.today().date(),
+            key="new_action_date"
+        )
+        new_action_desc = st.text_input("Add New Action Description", key="new_action_desc")
+        submitted = st.form_submit_button("Save New Action")
+
+        if submitted:
+            if new_action_desc.strip():
+                st.session_state.response_actions.append(
+                    {"date": new_action_date, "description": new_action_desc.strip()}
+                )
+                st.success("New response action added.")
+                st.experimental_rerun()
+            else:
+                st.warning("Please enter a description.")
 
     # -------- Additional Analysis Tables and Summaries ---------
     st.subheader("📈 Timeline Analysis")
