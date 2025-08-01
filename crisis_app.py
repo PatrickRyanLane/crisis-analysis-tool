@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+from pandas import Timestamp
 import pytz
 import warnings
 
@@ -220,12 +221,16 @@ if "analysis_result" in st.session_state:
                   annotation_text="Crisis Minimum")
     # Response Actions - as dark green vertical lines
     for action in st.session_state.response_actions:
-        if action['date']:
-            action_dt = user_timezone.localize(datetime.combine(action['date'], datetime.min.time()))
-            action_dt_utc = action_dt.astimezone(pytz.UTC)
-            if data.index.min() <= action_dt_utc <= data.index.max():
+        if action.get('date'):
+            # Ensure good datetime handling and cast to Pandas Timestamp for Plotly compatibility
+            action_dt = datetime.combine(action['date'], datetime.min.time())
+            action_dt_aware = user_timezone.localize(action_dt) if action_dt.tzinfo is None else action_dt
+            action_dt_utc = action_dt_aware.astimezone(pytz.UTC)
+            # Use pd.Timestamp for safest Plotly vline rendering
+            plot_x = pd.Timestamp(action_dt_utc)
+            if data.index.min() <= plot_x <= data.index.max():
                 fig.add_vline(
-                    x=action_dt_utc,
+                    x=plot_x,
                     line_color="#045d1f",
                     line_width=3,
                     opacity=0.92,
