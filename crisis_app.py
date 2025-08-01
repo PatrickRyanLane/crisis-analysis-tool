@@ -19,11 +19,8 @@ st.set_page_config(
 st.title("🚨 Reputational Crisis Impact Analysis Tool")
 st.markdown("**Analyze the economic impact of reputational crises on stock prices**")
 
-# --- Sidebar Inputs ---
 st.sidebar.header("Crisis Analysis Parameters")
-
 ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
-
 TIMEZONE_OPTIONS = [
     "America/New_York",
     "UTC",
@@ -31,90 +28,18 @@ TIMEZONE_OPTIONS = [
     "Asia/Tokyo",
     "Australia/Sydney"
 ]
-
 user_tz_str = st.sidebar.selectbox("Select Timezone for Input Dates", TIMEZONE_OPTIONS, index=0)
 user_timezone = pytz.timezone(user_tz_str)
 
 crisis_start_date = st.sidebar.date_input("Crisis Start Date", value=datetime(2022, 1, 1))
 crisis_end_date = st.sidebar.date_input("Crisis End Date", value=datetime(2022, 6, 30))
-
 mitigation_start_date = st.sidebar.date_input("Mitigation Start Date", value=crisis_end_date)
 mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_end_date + timedelta(days=90))
-
 if mitigation_end_date < mitigation_start_date:
     st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
 
-# Initialize response_actions in session state
-if "response_actions" not in st.session_state:
-    st.session_state.response_actions = []
-
-# --- Helper functions ---
-def get_text_positions(dates, labels):
-    """
-    Generate alternating text positions to prevent overlap
-    """
-    if not dates:
-        return []
-    # Sort dates with their labels to maintain consistency
-    date_label_pairs = list(zip(dates, labels))
-    date_label_pairs.sort(key=lambda x: x[0])
-    positions = []
-    for i, (date, label) in enumerate(date_label_pairs):
-        if i % 4 == 0:
-            positions.append('top center')
-        elif i % 4 == 1:
-            positions.append('bottom center')
-        elif i % 4 == 2:
-            positions.append('middle left')
-        else:
-            positions.append('middle right')
-    # Map positions back in original order
-    sorted_indices = sorted(range(len(dates)), key=lambda i: dates[i])
-    position_map = {sorted_indices[i]: positions[i] for i in range(len(positions))}
-    original_order_positions = [position_map[i] for i in range(len(dates))]
-    return original_order_positions
-
-
-def editable_actions_list():
-    st.subheader("🗓️ Editable Response Actions")
-    indices_to_delete = []
-    should_rerun = False  # flag to trigger rerun once
-
-    for idx, action in enumerate(st.session_state.response_actions):
-        cols = st.columns([3, 6, 1])
-
-        new_date = cols[0].date_input(
-            label=f"Date {idx + 1}",
-            value=action['date'],
-            key=f"date_{idx}"
-        )
-        new_desc = cols[1].text_input(
-            label=f"Description {idx + 1}",
-            value=action['description'],
-            max_chars=200,
-            key=f"desc_{idx}"
-        )
-        if cols[2].button("❌", key=f"del_{idx}"):
-            indices_to_delete.append(idx)
-            should_rerun = True
-
-        if (new_date != action['date']) or (new_desc != action['description']):
-            st.session_state.response_actions[idx] = {"date": new_date, "description": new_desc}
-            should_rerun = True
-
-    # Remove deleted items after loop to avoid index conflicts
-    if indices_to_delete:
-        for i in sorted(indices_to_delete, reverse=True):
-            st.session_state.response_actions.pop(i)
-
-    if should_rerun:
-        st.experimental_rerun()
-
-
-# --- Stock data analysis ---
 if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisis Impact"):
     try:
-        # Localize input dates to user timezone
         crisis_start = user_timezone.localize(datetime.combine(crisis_start_date, datetime.min.time()))
         crisis_end = user_timezone.localize(datetime.combine(crisis_end_date, datetime.min.time()))
         mitigation_start = user_timezone.localize(datetime.combine(mitigation_start_date, datetime.min.time()))
@@ -122,19 +47,15 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
         start_date = min(crisis_start, mitigation_start) - timedelta(days=90)
         end_date = max(crisis_end, mitigation_end) + timedelta(days=90)
 
-        # Fetch stock data
         data = yf.Ticker(ticker).history(start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
-
         if data.empty:
             st.error("No data found for this ticker. Please check the symbol.")
             st.stop()
-
         if data.index.tz is None:
             data.index = data.index.tz_localize('UTC')
         else:
             data.index = data.index.tz_convert('UTC')
 
-        # Convert dates to UTC for consistent indexing
         crisis_start_utc = crisis_start.astimezone(pytz.UTC)
         crisis_end_utc = crisis_end.astimezone(pytz.UTC)
         mitigation_start_utc = mitigation_start.astimezone(pytz.UTC)
@@ -154,7 +75,6 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
         crisis_avg = crisis_data['Close'].mean()
         mitigation_avg = mitigation_data['Close'].mean() if not mitigation_data.empty else np.nan
         mitigation_vol = mitigation_data['Close'].std() if not mitigation_data.empty else np.nan
-
         max_decline = ((crisis_min - pre_crisis_avg) / pre_crisis_avg) * 100
         avg_decline = ((crisis_avg - pre_crisis_avg) / pre_crisis_avg) * 100
 
@@ -171,10 +91,10 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
             stock = yf.Ticker(ticker)
             company_info = stock.info
             shares_outstanding = company_info.get('sharesOutstanding', 1000000000)
+            market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
         except Exception:
             shares_outstanding = 1000000000
-
-        market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
+            market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
 
         st.session_state.analysis_result = dict(
             data=data,
@@ -195,21 +115,21 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
             recovery_percentage=recovery_percentage,
             current_recovery_percentage=current_recovery_percentage,
             shares_outstanding=shares_outstanding,
-            market_cap_loss=market_cap_loss,
+            market_cap_loss=market_cap_loss
         )
-
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
 
-# -------- Main Analysis Results and Metrics -----------
+if "response_actions" not in st.session_state:
+    st.session_state.response_actions = []
 
+# -------- Main Analysis Results and Metrics -----------
 if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
 
     col1, col2, col3, col4, col5 = st.columns(5)
-
     with col1:
         st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
     with col2:
@@ -230,7 +150,7 @@ if "analysis_result" in st.session_state:
                        f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
         else:
             st.metric("Post-Crisis Recovery", "Not enough data")
-
+    
     st.subheader("💰 Economic Impact Analysis")
     st.write(f"**Estimated Market Cap Loss:** ${res['market_cap_loss']:,.0f}")
     st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
@@ -238,30 +158,26 @@ if "analysis_result" in st.session_state:
     st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
              f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
 
-    # --------- Plotting Section: Chart first ---------
-
-    # Prepare response actions dates and labels with improved positioning
+    # -------------------- Main Chart + Stacked Timeline Subplot -------------------
+    # Prepare response actions dates and labels
     act_dates, act_labels = [], []
     for action in st.session_state.response_actions:
-        if action.get("date") and action.get("description"):
+        if action.get("date"):
             action_dt = datetime.combine(action['date'], datetime.min.time())
-            # Localize & convert to UTC
             action_dt_aware = user_timezone.localize(action_dt) if action_dt.tzinfo is None else action_dt
             action_dt_utc = action_dt_aware.astimezone(pytz.UTC)
             action_dt_naive = action_dt_utc.replace(tzinfo=None)
             act_dates.append(action_dt_naive)
-            # Truncate long labels to prevent overcrowding
-            label = action['description'][:20] + "..." if len(action['description']) > 20 else action['description']
+            label = action['description'] or "Response"
             act_labels.append(label)
 
-    text_positions = get_text_positions(act_dates, act_labels) if act_dates else []
-
+    # Create a subplot figure: row 1 - price, row 2 - timeline dots
     fig = make_subplots(
         rows=2, cols=1,
         shared_xaxes=True,
         row_heights=[0.85, 0.15],
         vertical_spacing=0.01,
-        row_titles=["Stock Price Chart", "Response Actions Timeline"],
+        row_titles=["Stock Price Chart", "Response Actions Timeline"]
     )
 
     # Main Price Line
@@ -277,13 +193,13 @@ if "analysis_result" in st.session_state:
     fig.add_vrect(x0=res['mitigation_start_utc'].replace(tzinfo=None), x1=res['mitigation_end_utc'].replace(tzinfo=None),
                   fillcolor="green", opacity=0.13, layer="below", line_width=0,
                   annotation_text="Mitigation Period", annotation_position="top right", row=1, col=1)
-
     fig.add_hline(y=res['pre_crisis_avg'], line_dash="dash", line_color="green",
                   annotation_text="Pre-Crisis Average", row=1, col=1)
     fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
                   annotation_text="Crisis Minimum", row=1, col=1)
 
-    # Add timeline event points to row 2 with smart positioning
+    # (Old vertical lines omitted)
+    # Add timeline event points to row 2
     if act_dates:
         fig.add_trace(go.Scatter(
             x=act_dates,
@@ -291,18 +207,19 @@ if "analysis_result" in st.session_state:
             mode="markers+text",
             marker=dict(symbol="circle", size=16, color="#045d1f"),
             text=act_labels,
-            textposition=text_positions,  # Use smart positioning
+            textposition="top center",
             name="Response Actions",
-            hovertext=[f"{label} {date.strftime('%Y-%m-%d')}" for label, date in zip(act_labels, act_dates)],
+            hovertext=act_labels,
             showlegend=False
         ), row=2, col=1)
 
     # Timeline track styling
-    fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1,
-                     range=[0.5, 1.5], showgrid=False, zeroline=False, title=None)
+    fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1, range=[0.8, 1.2], showgrid=False, zeroline=False, title=None)
     fig.update_xaxes(title="Date", row=2, col=1)
+
     # Price chart styling
     fig.update_yaxes(title="Price ($)", row=1, col=1)
+
     fig.update_layout(
         height=700,
         title=f"{ticker} Stock Price During Crisis & Mitigation",
@@ -311,34 +228,42 @@ if "analysis_result" in st.session_state:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # --------- Editable Response Actions List BELOW the chart ---------
-    editable_actions_list()
+    # -------- Add/Remove Response Actions Editor (Below Chart) ---------
+    st.markdown("---")
+    st.markdown("### 🛠️ Add or Edit Crisis Response Actions")
+    add_col, _ = st.columns([4, 8])
+    with add_col:
+        if st.button("+ Add Response Action"):
+            st.session_state.response_actions.append({'date': None, 'description': ''})
 
-    # --------- Add New Action Form BELOW the editable list ---------
-    with st.form("add_action_form", clear_on_submit=True):
-        new_action_date = st.date_input(
-            "Add New Action Date",
-            value=mitigation_start_date if mitigation_start_date else datetime.today().date(),
-            key="new_action_date"
-        )
-        new_action_desc = st.text_input("Add New Action Description", key="new_action_desc")
-        submitted = st.form_submit_button("Save New Action")
+    rem_indices = []
+    for i, action in enumerate(st.session_state.response_actions):
+        cols = st.columns([2, 7, 1])
+        with cols[0]:
+            date_val = st.date_input(
+                f"Action Date #{i + 1}",
+                value=action['date'] if action['date'] else crisis_start_date,
+                key=f"action_date_main_{i}",
+                label_visibility="collapsed"
+            )
+        with cols[1]:
+            desc_val = st.text_input(
+                f"Description #{i + 1}",
+                value=action['description'],
+                key=f"action_desc_main_{i}",
+                label_visibility="collapsed"
+            )
+        with cols[2]:
+            if st.button("❌", key=f"delete_main_{i}"):
+                rem_indices.append(i)
+        st.session_state.response_actions[i]['date'] = date_val
+        st.session_state.response_actions[i]['description'] = desc_val
+    for i in reversed(rem_indices):
+        st.session_state.response_actions.pop(i)
 
-        if submitted:
-            if new_action_desc.strip():
-                st.session_state.response_actions.append(
-                    {"date": new_action_date, "description": new_action_desc.strip()}
-                )
-                st.success("New response action added.")
-                st.experimental_rerun()
-            else:
-                st.warning("Please enter a description.")
-
-    # -------- Additional Analysis Tables and Summaries ---------
+    # -- Timeline Table --
     st.subheader("📈 Timeline Analysis")
-
     post_crisis_data = res['post_crisis_data']
-
     timeline_data = pd.DataFrame({
         'Period': [
             'Pre-Crisis (90 days)',
@@ -359,12 +284,10 @@ if "analysis_result" in st.session_state:
             post_crisis_data['Close'].std() if not post_crisis_data.empty else np.nan
         ]
     }).dropna()
-
     st.dataframe(timeline_data.round(2), use_container_width=True)
 
     if 'Volume' in data.columns:
         st.subheader("📊 Trading Volume Analysis")
-
         vol_fig = go.Figure()
         vol_fig.add_trace(go.Scatter(
             x=data.index,
@@ -375,47 +298,61 @@ if "analysis_result" in st.session_state:
         ))
         vol_fig.add_vrect(
             x0=res['crisis_start_utc'], x1=res['crisis_end_utc'],
-            fillcolor="red", opacity=0.18, line_width=0
-        )
+            fillcolor="red", opacity=0.18, line_width=0)
         vol_fig.add_vrect(
             x0=res['mitigation_start_utc'], x1=res['mitigation_end_utc'],
-            fillcolor="green", opacity=0.12, line_width=0
-        )
+            fillcolor="green", opacity=0.12, line_width=0)
         st.plotly_chart(vol_fig, use_container_width=True)
 
-    # Crisis Impact Summary
-    st.subheader("🎯 Crisis Impact Summary")
+    if st.session_state.response_actions:
+        st.subheader("🛠️ Response Actions Timeline Table")
+        response_action_rows = [
+            {"Date": str(a['date']), "Description": a['description']}
+            for a in st.session_state.response_actions if a['date'] and a['description']
+        ]
+        if response_action_rows:
+            st.table(pd.DataFrame(response_action_rows))
 
-    impact_severity = (
-        "High" if abs(res['max_decline']) > 30 else
-        "Moderate" if abs(res['max_decline']) > 15 else
-        "Low"
-    )
+    st.subheader("🎯 Crisis Impact Summary")
+    impact_severity = "High" if abs(res['max_decline']) > 30 else \
+                      "Moderate" if abs(res['max_decline']) > 15 else \
+                      "Low"
     st.write(f"""
     **Crisis Severity:** {impact_severity} Impact
 
     **Key Findings:**
-
     - Maximum price decline of {abs(res['max_decline']):.1f}% during the crisis period
-
     - Stock fell from ${res['pre_crisis_avg']:.2f} average to ${res['crisis_min']:.2f} minimum
-
     - Crisis lasted {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days
-
     - Mitigation actions and timeframe shown above
-
     - Recovery from crisis minimum:
-
         - Avg post-crisis: {res['recovery_percentage']:.1f}% (${res['post_crisis_avg']:.2f})
-
-        - Current: {res['current_recovery_percentage']:.1f}% (${res['current_postcrisis_price']:.2f})
+        - Current: {res['current_recovery_percentage']:.1f}% (${res['current_postcrisis_price']:.2f}) 
     """ if not post_crisis_data.empty else """
     Post-crisis recovery metrics not available (not enough post-crisis data).
     """)
 
 else:
-    st.info("Please perform crisis impact analysis first to load stock data and charts.")
+    st.subheader("📋 How to Use This Tool")
+    st.write("""
+    1. **Enter a stock ticker** (e.g., TSLA, AAPL, META) in the sidebar.
+    2. **Select the timezone** corresponding to your crisis and mitigation date inputs.
+    3. **Select crisis, mitigation start and end dates** in any order.
+    4. **Click 'Analyze Crisis Impact'** to load and analyze the stock data.
+    5. **Use the section below the main chart to add/remove response actions** at any time; the chart updates instantly.
 
-# End of app
+    The app analyzes and visualizes:
+    - Crisis and mitigation periods, including economic impact estimates.
+    - Response actions as a dot-labeled event track below the main price chart.
+    - Post-crisis recovery metrics: both average and latest closing price.
+    - All calculations are timezone-robust and clearly visualized.
+    """)
+    st.subheader("🔍 Example Crisis Events You Can Analyze")
+    st.write("""
+    - **Tesla (TSLA)**: Twitter acquisition period (Jan-Jun 2022)
+    - **Meta (META)**: Cambridge Analytica scandal (Mar-Jul 2018)
+    - **Boeing (BA)**: 737 MAX crashes (Mar-Dec 2019)
+    """)
+
 st.markdown("---")
-st.markdown("**Crisis Impact Analysis Tool** - Built with Streamlit and yfinance")
+st.markdown("**Crisis Impact Analysis Tool** – Add response actions below the chart anytime. Features a timeline event track for clarity. Built with Streamlit, yfinance, and robust timezone support.")
