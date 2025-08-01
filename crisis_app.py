@@ -78,36 +78,36 @@ def get_text_positions(dates, labels):
 def editable_actions_list():
     st.subheader("🗓️ Editable Response Actions")
     indices_to_delete = []
+    should_rerun = False  # flag to trigger rerun once
 
     for idx, action in enumerate(st.session_state.response_actions):
         cols = st.columns([3, 6, 1])
 
-        # Editable date input
         new_date = cols[0].date_input(
             label=f"Date {idx + 1}",
             value=action['date'],
             key=f"date_{idx}"
         )
-        # Editable text input
         new_desc = cols[1].text_input(
             label=f"Description {idx + 1}",
             value=action['description'],
             max_chars=200,
             key=f"desc_{idx}"
         )
-        # Delete button
         if cols[2].button("❌", key=f"del_{idx}"):
             indices_to_delete.append(idx)
+            should_rerun = True
 
-        # Update session state if changed
-        if new_date != action['date'] or new_desc != action['description']:
+        if (new_date != action['date']) or (new_desc != action['description']):
             st.session_state.response_actions[idx] = {"date": new_date, "description": new_desc}
-            st.experimental_rerun()
+            should_rerun = True
 
-    # Remove deleted actions after loop to avoid index conflicts
+    # Remove deleted items after loop to avoid index conflicts
     if indices_to_delete:
         for i in sorted(indices_to_delete, reverse=True):
             st.session_state.response_actions.pop(i)
+
+    if should_rerun:
         st.experimental_rerun()
 
 
