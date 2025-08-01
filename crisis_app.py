@@ -77,7 +77,6 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
         mitigation_vol = mitigation_data['Close'].std() if not mitigation_data.empty else np.nan
         max_decline = ((crisis_min - pre_crisis_avg) / pre_crisis_avg) * 100
         avg_decline = ((crisis_avg - pre_crisis_avg) / pre_crisis_avg) * 100
-        current_recovery = ((crisis_min - current_postcrisis_price) / current_postcrisis_price) *100
 
         if not post_crisis_data.empty:
             post_crisis_avg = post_crisis_data['Close'].mean()
@@ -110,7 +109,6 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
             mitigation_vol=mitigation_vol,
             max_decline=max_decline,
             avg_decline=avg_decline,
-            current_recovery=current_recovery,
             post_crisis_data=post_crisis_data,
             post_crisis_avg=post_crisis_avg,
             current_postcrisis_price=current_postcrisis_price,
@@ -154,7 +152,7 @@ if "analysis_result" in st.session_state:
         else:
             st.metric("Post-Crisis Recovery", "Not enough data")
     with col6:
-            st.metric("Current Price", f"${res['current_postcrisis_price']:.2f}", delta=f"{res['current_recovery']:.1f}%")
+            st.metric("Current Price", f"${res['current_postcrisis_price']:.2f}", delta=f"{res['current_recovery_percentage']:.1f}%")
 
 
     st.subheader("💰 Economic Impact Analysis")
