@@ -153,7 +153,9 @@ if "analysis_result" in st.session_state:
             st.metric("Post-Crisis Recovery", "Not enough data")
     with col6:
             st.metric("Current Price", f"${res['current_postcrisis_price']:.2f}", delta=f"{res['current_recovery_percentage']:.1f}%")
-
+            st.caption("Since crisis minimum")
+            st.caption(f"Difference from crisis min: "
+                                f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
 
     st.subheader("💰 Economic Impact Analysis")
     st.write(f"**Estimated Market Cap Loss:** ${res['market_cap_loss']:,.0f}")
