@@ -21,6 +21,7 @@ st.markdown("**Analyze the economic impact of reputational crises on stock price
 
 st.sidebar.header("Crisis Analysis Parameters")
 ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
+
 TIMEZONE_OPTIONS = [
     "America/New_York",
     "UTC",
@@ -38,7 +39,9 @@ mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_
 if mitigation_end_date < mitigation_start_date:
     st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
 
-if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisis Impact"):
+analyze = st.sidebar.button("Analyze Crisis Impact")
+
+if analyze or "analysis_result" not in st.session_state:
     try:
         crisis_start = user_timezone.localize(datetime.combine(crisis_start_date, datetime.min.time()))
         crisis_end = user_timezone.localize(datetime.combine(crisis_end_date, datetime.min.time()))
@@ -124,33 +127,31 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
 
-# -------- Main Analysis Results and Metrics -----------
+# Main analysis and chart
 if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
     with col2:
         st.metric("Crisis Minimum", f"${res['crisis_min']:.2f}", delta=f"{res['max_decline']:.1f}%")
     with col3:
         st.metric("Crisis Avg", f"${res['crisis_avg']:.2f}", delta=f"{res['avg_decline']:.1f}%")
-    with col4:
+
+    with st.expander("Post-Crisis Recovery Details", expanded=True):
         if not res['post_crisis_data'].empty:
-            st.metric("Post-Crisis Recovery Avg", f"{res['recovery_percentage']:.1f}%")
-            st.caption(f"Avg post-crisis close: ${res['post_crisis_avg']:.2f}")
+            st.metric("Recovery (mean)", f"{res['recovery_percentage']:.1f}%")
+            st.caption(f"Average post-crisis close: ${res['post_crisis_avg']:.2f}")
+            st.metric("Current recovery", f"{res['current_recovery_percentage']:.1f}%")
+            st.caption(
+                f"Current price: ${res['current_postcrisis_price']:.2f}\n"
+                f"Difference from crisis min: ${res['current_postcrisis_price'] - res['crisis_min']:.2f}"
+            )
         else:
-            st.metric("Post-Crisis Recovery", "Not enough data")
-    with col5:
-        if not res['post_crisis_data'].empty:
-            st.metric("Recovery to Current Price", f"{res['current_recovery_percentage']:.1f}%")
-            st.caption(f"Current price: ${res['current_postcrisis_price']:.2f}")
-            st.caption(f"Difference from crisis min: "
-                       f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
-        else:
-            st.metric("Post-Crisis Recovery", "Not enough data")
-    
+            st.write("Not enough post-crisis data")
+
     st.subheader("💰 Economic Impact Analysis")
     st.write(f"**Estimated Market Cap Loss:** ${res['market_cap_loss']:,.0f}")
     st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
@@ -158,8 +159,7 @@ if "analysis_result" in st.session_state:
     st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
              f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
 
-    # -------------------- Main Chart + Stacked Timeline Subplot -------------------
-    # Prepare response actions dates and labels
+    # Prepare stacked timeline below chart
     act_dates, act_labels = [], []
     for action in st.session_state.response_actions:
         if action.get("date"):
@@ -171,7 +171,6 @@ if "analysis_result" in st.session_state:
             label = action['description'] or "Response"
             act_labels.append(label)
 
-    # Create a subplot figure: row 1 - price, row 2 - timeline dots
     fig = make_subplots(
         rows=2, cols=1,
         shared_xaxes=True,
@@ -183,10 +182,11 @@ if "analysis_result" in st.session_state:
     # Main Price Line
     fig.add_trace(go.Scatter(
         x=data.index, y=data['Close'],
-        mode='lines', name='Stock Price', line=dict(color='blue', width=2)
+        mode='lines', name='Stock Price',
+        line=dict(color='blue', width=2)
     ), row=1, col=1)
 
-    # Crisis/Mitigation periods, averages, min lines
+    # Crisis/Mitigation + lines
     fig.add_vrect(x0=res['crisis_start_utc'].replace(tzinfo=None), x1=res['crisis_end_utc'].replace(tzinfo=None),
                   fillcolor="red", opacity=0.2, layer="below", line_width=0,
                   annotation_text="Crisis Period", annotation_position="top left", row=1, col=1)
@@ -198,8 +198,6 @@ if "analysis_result" in st.session_state:
     fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
                   annotation_text="Crisis Minimum", row=1, col=1)
 
-    # (Old vertical lines omitted)
-    # Add timeline event points to row 2
     if act_dates:
         fig.add_trace(go.Scatter(
             x=act_dates,
@@ -213,11 +211,8 @@ if "analysis_result" in st.session_state:
             showlegend=False
         ), row=2, col=1)
 
-    # Timeline track styling
     fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1, range=[0.8, 1.2], showgrid=False, zeroline=False, title=None)
     fig.update_xaxes(title="Date", row=2, col=1)
-
-    # Price chart styling
     fig.update_yaxes(title="Price ($)", row=1, col=1)
 
     fig.update_layout(
@@ -228,40 +223,52 @@ if "analysis_result" in st.session_state:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # -------- Add/Remove Response Actions Editor (Below Chart) ---------
+    # -------- Add/Remove Response Actions Editor ---------
     st.markdown("---")
-    st.markdown("### 🛠️ Add or Edit Crisis Response Actions")
-    add_col, _ = st.columns([4, 8])
-    with add_col:
-        if st.button("+ Add Response Action"):
-            st.session_state.response_actions.append({'date': None, 'description': ''})
+    st.markdown("### 🛠️ Add a Crisis Response Action")
 
+    if "pending_action" not in st.session_state:
+        st.session_state.pending_action = {'date': mitigation_start_date, 'description': ''}
+
+    with st.form("add_new_action"):
+        date = st.date_input("Action Date (required)", value=st.session_state.pending_action['date'], key="pending_action_date")
+        desc = st.text_input("Label/Description (required)", value=st.session_state.pending_action['description'], key="pending_action_desc")
+        submitted = st.form_submit_button("Add Action")
+        if submitted:
+            if date and desc.strip():
+                st.session_state.response_actions.append({'date': date, 'description': desc.strip()})
+                st.session_state.pending_action = {'date': mitigation_start_date, 'description': ''}
+            else:
+                st.warning("Both date and description are required to add a response action.")
+
+    st.markdown("#### Existing Response Actions (Edit / Remove)")
     rem_indices = []
     for i, action in enumerate(st.session_state.response_actions):
         cols = st.columns([2, 7, 1])
         with cols[0]:
             date_val = st.date_input(
-                f"Action Date #{i + 1}",
-                value=action['date'] if action['date'] else crisis_start_date,
-                key=f"action_date_main_{i}",
+                f"Edit Date #{i + 1}",
+                value=action['date'],
+                key=f"edit_action_date_{i}",
                 label_visibility="collapsed"
             )
         with cols[1]:
             desc_val = st.text_input(
-                f"Description #{i + 1}",
+                f"Edit Description #{i + 1}",
                 value=action['description'],
-                key=f"action_desc_main_{i}",
+                key=f"edit_action_desc_{i}",
                 label_visibility="collapsed"
             )
         with cols[2]:
-            if st.button("❌", key=f"delete_main_{i}"):
+            if st.button("❌ Remove", key=f"delete_action_{i}"):
                 rem_indices.append(i)
         st.session_state.response_actions[i]['date'] = date_val
         st.session_state.response_actions[i]['description'] = desc_val
+
     for i in reversed(rem_indices):
         st.session_state.response_actions.pop(i)
 
-    # -- Timeline Table --
+    # Timeline Table
     st.subheader("📈 Timeline Analysis")
     post_crisis_data = res['post_crisis_data']
     timeline_data = pd.DataFrame({
@@ -339,13 +346,13 @@ else:
     2. **Select the timezone** corresponding to your crisis and mitigation date inputs.
     3. **Select crisis, mitigation start and end dates** in any order.
     4. **Click 'Analyze Crisis Impact'** to load and analyze the stock data.
-    5. **Use the section below the main chart to add/remove response actions** at any time; the chart updates instantly.
+    5. **Use the section below the main chart to add response actions**—these will appear on the event timeline after you fill in both date and label, then hit "Add Action". You can edit/remove existing actions at any time.
 
     The app analyzes and visualizes:
     - Crisis and mitigation periods, including economic impact estimates.
-    - Response actions as a dot-labeled event track below the main price chart.
+    - Response actions as a labeled event timeline below the main chart.
     - Post-crisis recovery metrics: both average and latest closing price.
-    - All calculations are timezone-robust and clearly visualized.
+    - All calculations are timezone-robust.
     """)
     st.subheader("🔍 Example Crisis Events You Can Analyze")
     st.write("""
@@ -355,4 +362,4 @@ else:
     """)
 
 st.markdown("---")
-st.markdown("**Crisis Impact Analysis Tool** – Add response actions below the chart anytime. Features a timeline event track for clarity. Built with Streamlit, yfinance, and robust timezone support.")
+st.markdown("**Crisis Impact Analysis Tool** – Add response actions below the chart anytime. Event timeline is robust and intuitive. Built with Streamlit, yfinance, and full timezone support.")
