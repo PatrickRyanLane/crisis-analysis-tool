@@ -283,7 +283,7 @@ if "analysis_result" in st.session_state:
     with st.form("response_action_form", clear_on_submit=True):
         new_action_date = st.date_input(
             "Action Date",
-            value=crisis_start_date if crisis_start_date else datetime.today().date(),
+            value=mitigation_start_date if mitigation_start_date else datetime.today().date(),
         )
         new_action_desc = st.text_input("Action Description")
         submitted = st.form_submit_button("Save Action")
