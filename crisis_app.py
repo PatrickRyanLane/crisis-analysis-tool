@@ -184,25 +184,25 @@ if "analysis_result" in st.session_state:
                   annotation_text="Pre-Crisis Average")
     fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
                   annotation_text="Crisis Minimum")
-    # --- Response Actions: robust, timezone-naive Plotly, dark green lines ---
+    # ---- Response Actions: robust, plot as POSIX timestamp for x ----
     for action in st.session_state.response_actions:
         if action.get('date'):
             try:
-                # Always convert to naive datetime for Plotly reliability
                 action_dt = datetime.combine(action['date'], datetime.min.time())
                 action_dt_aware = user_timezone.localize(action_dt) if action_dt.tzinfo is None else action_dt
                 action_dt_utc = action_dt_aware.astimezone(pytz.UTC)
                 action_dt_naive = action_dt_utc.replace(tzinfo=None)
+                # Plotly expects float timestamp for full compatibility here
                 min_index_naive = data.index.min().to_pydatetime().replace(tzinfo=None)
                 max_index_naive = data.index.max().to_pydatetime().replace(tzinfo=None)
                 if min_index_naive <= action_dt_naive <= max_index_naive:
                     fig.add_vline(
-                        x=action_dt_naive,
+                        x=action_dt_naive.timestamp(),
                         line_color="#045d1f",
                         line_width=3,
                         opacity=0.92,
-                        annotation_text=(action['description'] or "Response"),
-                        annotation_position="top left"
+                        annotation_text=(action['description'] or "Response")
+                        # annotation_position="top left" # annotation position can stay if text used
                     )
             except Exception as e:
                 st.warning(f"Failed to plot response action: {e}")
@@ -216,7 +216,7 @@ if "analysis_result" in st.session_state:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ------------------- Add/Remove Response Actions Editor (Below Chart) -------------------
+    # -------- Add/Remove Response Actions Editor (Below Chart) ---------
     st.markdown("---")
     st.markdown("### 🛠️ Add or Edit Crisis Response Actions")
     add_col, _ = st.columns([4, 8])
