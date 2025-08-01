@@ -129,7 +129,7 @@ if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
 
-    col1, col2, col3, col4, col5, col6= st.columns(6)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
     with col2:
@@ -138,9 +138,8 @@ if "analysis_result" in st.session_state:
         st.metric("Crisis Avg", f"${res['crisis_avg']:.2f}", delta=f"{res['avg_decline']:.1f}%")
     with col4:
         if not res['post_crisis_data'].empty:
-            st.metric("Post-Crisis Recovery Avg)", f"{res['recovery_percentage']:.1f}%")
+            st.metric("Post-Crisis Recovery Avg", f"{res['recovery_percentage']:.1f}%")
             st.caption(f"Avg post-crisis close: ${res['post_crisis_avg']:.2f}")
-            st.markdown("---")
         else:
             st.metric("Post-Crisis Recovery", "Not enough data")
     with col5:
@@ -151,12 +150,7 @@ if "analysis_result" in st.session_state:
                        f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
         else:
             st.metric("Post-Crisis Recovery", "Not enough data")
-    with col6:
-            st.metric("Current Price", f"${res['current_postcrisis_price']:.2f}", delta=f"{res['current_recovery_percentage']:.1f}%")
-            st.caption("Since crisis minimum")
-            st.caption(f"Difference from crisis min: "
-                                f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
-
+    
     st.subheader("💰 Economic Impact Analysis")
     st.write(f"**Estimated Market Cap Loss:** ${res['market_cap_loss']:,.0f}")
     st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
