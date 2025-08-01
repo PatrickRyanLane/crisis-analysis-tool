@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from pandas import Timestamp
 import pytz
 import warnings
 
@@ -126,49 +125,16 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
 
-# --- Response Actions State and Editor ---
+# -------- Response Actions in Session State --------
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
-
-st.markdown("### 🛠️ Crisis Response Actions (Edit and See Chart Update Instantly)")
-
-# Actions Editor (Add/Edit/Delete)
-add_col, _, _ = st.columns([2, 1, 5])
-with add_col:
-    if st.button("+ Add Response Action"):
-        st.session_state.response_actions.append({'date': None, 'description': ''})
-
-rem_indices = []
-for i, action in enumerate(st.session_state.response_actions):
-    cols = st.columns([2, 6, 1])
-    with cols[0]:
-        date_val = st.date_input(
-            f"Action Date #{i + 1}",
-            value=action['date'] if action['date'] else crisis_start_date,
-            key=f"action_date_main_{i}",
-            label_visibility="collapsed"
-        )
-    with cols[1]:
-        desc_val = st.text_input(
-            f"Description #{i + 1}",
-            value=action['description'],
-            key=f"action_desc_main_{i}",
-            label_visibility="collapsed"
-        )
-    with cols[2]:
-        if st.button("❌", key=f"delete_main_{i}"):
-            rem_indices.append(i)
-    st.session_state.response_actions[i]['date'] = date_val
-    st.session_state.response_actions[i]['description'] = desc_val
-for i in reversed(rem_indices):
-    st.session_state.response_actions.pop(i)
 
 # --- Show Analysis Results and Chart ---
 if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
 
-    # Results Metrics Layout
+    # ---- RESULTS METRICS LAYOUT ----
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
@@ -176,7 +142,6 @@ if "analysis_result" in st.session_state:
         st.metric("Crisis Minimum", f"${res['crisis_min']:.2f}", delta=f"{res['max_decline']:.1f}%")
     with col3:
         st.metric("Crisis Avg", f"${res['crisis_avg']:.2f}", delta=f"{res['avg_decline']:.1f}%")
-    # Improved visual separation for recovery
     with col4:
         if not res['post_crisis_data'].empty:
             st.markdown("**Post-Crisis Recovery (Average):**")
@@ -219,25 +184,28 @@ if "analysis_result" in st.session_state:
                   annotation_text="Pre-Crisis Average")
     fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
                   annotation_text="Crisis Minimum")
-    # Response Actions - as dark green vertical lines
+    # --- Response Actions: robust, timezone-naive Plotly, dark green lines ---
     for action in st.session_state.response_actions:
         if action.get('date'):
-            # Convert to a naive datetime (NO timezone info)
-            action_dt = datetime.combine(action['date'], datetime.min.time())
-            # If the data index is also naive, all is well; otherwise, you might want to convert to UTC and then remove tzinfo:
-            action_dt_aware = user_timezone.localize(action_dt)
-            action_dt_utc = action_dt_aware.astimezone(pytz.UTC)
-            # REMOVE tzinfo for Plotly
-            action_dt_naive = action_dt_utc.replace(tzinfo=None)
-            if data.index.min().to_pydatetime().replace(tzinfo=None) <= action_dt_naive <= data.index.max().to_pydatetime().replace(tzinfo=None):
-                fig.add_vline(
-                    x=action_dt_naive,
-                    line_color="#045d1f",
-                    line_width=3,
-                    opacity=0.92,
-                    annotation_text=(action['description'] or "Response"),
-                    annotation_position="top left"
-                )
+            try:
+                # Always convert to naive datetime for Plotly reliability
+                action_dt = datetime.combine(action['date'], datetime.min.time())
+                action_dt_aware = user_timezone.localize(action_dt) if action_dt.tzinfo is None else action_dt
+                action_dt_utc = action_dt_aware.astimezone(pytz.UTC)
+                action_dt_naive = action_dt_utc.replace(tzinfo=None)
+                min_index_naive = data.index.min().to_pydatetime().replace(tzinfo=None)
+                max_index_naive = data.index.max().to_pydatetime().replace(tzinfo=None)
+                if min_index_naive <= action_dt_naive <= max_index_naive:
+                    fig.add_vline(
+                        x=action_dt_naive,
+                        line_color="#045d1f",
+                        line_width=3,
+                        opacity=0.92,
+                        annotation_text=(action['description'] or "Response"),
+                        annotation_position="top left"
+                    )
+            except Exception as e:
+                st.warning(f"Failed to plot response action: {e}")
 
     fig.update_layout(
         title=f"{ticker} Stock Price During Crisis & Mitigation",
@@ -247,6 +215,39 @@ if "analysis_result" in st.session_state:
         showlegend=True
     )
     st.plotly_chart(fig, use_container_width=True)
+
+    # ------------------- Add/Remove Response Actions Editor (Below Chart) -------------------
+    st.markdown("---")
+    st.markdown("### 🛠️ Add or Edit Crisis Response Actions")
+    add_col, _ = st.columns([4, 8])
+    with add_col:
+        if st.button("+ Add Response Action"):
+            st.session_state.response_actions.append({'date': None, 'description': ''})
+
+    rem_indices = []
+    for i, action in enumerate(st.session_state.response_actions):
+        cols = st.columns([2, 7, 1])
+        with cols[0]:
+            date_val = st.date_input(
+                f"Action Date #{i + 1}",
+                value=action['date'] if action['date'] else crisis_start_date,
+                key=f"action_date_main_{i}",
+                label_visibility="collapsed"
+            )
+        with cols[1]:
+            desc_val = st.text_input(
+                f"Description #{i + 1}",
+                value=action['description'],
+                key=f"action_desc_main_{i}",
+                label_visibility="collapsed"
+            )
+        with cols[2]:
+            if st.button("❌", key=f"delete_main_{i}"):
+                rem_indices.append(i)
+        st.session_state.response_actions[i]['date'] = date_val
+        st.session_state.response_actions[i]['description'] = desc_val
+    for i in reversed(rem_indices):
+        st.session_state.response_actions.pop(i)
 
     # -- Timeline Table --
     st.subheader("📈 Timeline Analysis")
@@ -273,7 +274,6 @@ if "analysis_result" in st.session_state:
     }).dropna()
     st.dataframe(timeline_data.round(2), use_container_width=True)
 
-    # Trading Volume Chart
     if 'Volume' in data.columns:
         st.subheader("📊 Trading Volume Analysis")
         vol_fig = go.Figure()
@@ -292,6 +292,7 @@ if "analysis_result" in st.session_state:
             fillcolor="green", opacity=0.12, line_width=0)
         st.plotly_chart(vol_fig, use_container_width=True)
 
+    # Optionally, summary table of response actions
     if st.session_state.response_actions:
         st.subheader("🛠️ Response Actions Timeline")
         response_action_rows = [
@@ -326,9 +327,8 @@ else:
     1. **Enter a stock ticker** (e.g., TSLA, AAPL, META) in the sidebar.
     2. **Select the timezone** corresponding to your crisis and mitigation date inputs.
     3. **Select crisis, mitigation start and end dates** in any order.
-    4. **Add "Response Actions"**—each with a date and description. 
-       Add/remove these at any time; the chart updates instantly.
-    5. **Click 'Analyze Crisis Impact'** to load and analyze the stock data.
+    4. **Click 'Analyze Crisis Impact'** to load and analyze the stock data.
+    5. **Use the section below the main chart to add/remove response actions** at any time; the chart updates instantly.
 
     The app analyzes and visualizes:
     - Crisis and mitigation periods, including economic impact estimates.
