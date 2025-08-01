@@ -7,7 +7,6 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import pytz
 import warnings
-from collections import defaultdict
 
 warnings.filterwarnings('ignore')
 
@@ -22,7 +21,6 @@ st.markdown("**Analyze the economic impact of reputational crises on stock price
 
 st.sidebar.header("Crisis Analysis Parameters")
 ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
-
 TIMEZONE_OPTIONS = [
     "America/New_York",
     "UTC",
@@ -30,7 +28,6 @@ TIMEZONE_OPTIONS = [
     "Asia/Tokyo",
     "Australia/Sydney"
 ]
-
 user_tz_str = st.sidebar.selectbox("Select Timezone for Input Dates", TIMEZONE_OPTIONS, index=0)
 user_timezone = pytz.timezone(user_tz_str)
 
@@ -38,7 +35,6 @@ crisis_start_date = st.sidebar.date_input("Crisis Start Date", value=datetime(20
 crisis_end_date = st.sidebar.date_input("Crisis End Date", value=datetime(2022, 6, 30))
 mitigation_start_date = st.sidebar.date_input("Mitigation Start Date", value=crisis_end_date)
 mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_end_date + timedelta(days=90))
-
 if mitigation_end_date < mitigation_start_date:
     st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
 
@@ -123,7 +119,6 @@ if analyze or "analysis_result" not in st.session_state:
             shares_outstanding=shares_outstanding,
             market_cap_loss=market_cap_loss
         )
-
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
@@ -166,7 +161,7 @@ if "analysis_result" in st.session_state:
     st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
              f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
 
-    # ------ Prepare response action marker positions with vertical label offsets ------
+    # Prepare stacked timeline below chart (always uses latest response_actions)
     act_dates, act_labels = [], []
     for action in st.session_state.response_actions:
         if action.get("date"):
@@ -177,15 +172,6 @@ if "analysis_result" in st.session_state:
             act_dates.append(action_dt_naive)
             label = action['description'] or "Response"
             act_labels.append(label)
-
-    # Compute y-offsets to prevent label overlap for events on the same date
-    offsets = []
-    date_counts = defaultdict(int)
-    for dt in act_dates:
-        ordinal = dt.toordinal()
-        offset = date_counts[ordinal] * 0.3  # shift up by 0.3 units per event at the same date
-        offsets.append(1 + offset)
-        date_counts[ordinal] += 1
 
     fig = make_subplots(
         rows=2, cols=1,
@@ -200,7 +186,6 @@ if "analysis_result" in st.session_state:
         x=data.index, y=data['Close'],
         mode='lines', name='Stock Price', line=dict(color='blue', width=2)
     ), row=1, col=1)
-
     # Crisis/Mitigation periods
     fig.add_vrect(x0=res['crisis_start_utc'].replace(tzinfo=None), x1=res['crisis_end_utc'].replace(tzinfo=None),
                   fillcolor="red", opacity=0.2, layer="below", line_width=0,
@@ -213,11 +198,10 @@ if "analysis_result" in st.session_state:
     fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
                   annotation_text="Crisis Minimum", row=1, col=1)
 
-    # Add Scatter for response actions to row 2 (timeline) with offset labels
     if act_dates:
         fig.add_trace(go.Scatter(
             x=act_dates,
-            y=offsets,
+            y=np.ones(len(act_dates)),
             mode="markers+text",
             marker=dict(symbol="circle", size=16, color="#045d1f"),
             text=act_labels,
@@ -227,7 +211,7 @@ if "analysis_result" in st.session_state:
             showlegend=False
         ), row=2, col=1)
 
-    fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1, range=[0.8, max(offsets) + 0.3] if offsets else [0.8, 1.2], showgrid=False, zeroline=False, title=None)
+    fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1, range=[0.8, 1.2], showgrid=False, zeroline=False, title=None)
     fig.update_xaxes(title="Date", row=2, col=1)
     fig.update_yaxes(title="Price ($)", row=1, col=1)
     fig.update_layout(
