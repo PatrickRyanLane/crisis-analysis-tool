@@ -145,11 +145,22 @@ if st.sidebar.button("Analyze Crisis Impact"):
             with col3:
                 st.metric("Crisis Avg", f"${crisis_avg:.2f}", delta=f"{avg_decline:.1f}%")
             with col4:
+                # MAIN block: Average Post-Crisis Recovery
                 if not post_crisis_data.empty:
-                    st.metric("Post-Crisis Recovery", f"Avg: {recovery_percentage:.1f}%\nCurrent: {current_recovery_percentage:.1f}%")
-                    st.caption(f"Avg close: ${post_crisis_avg:.2f}\nCurrent: ${current_postcrisis_price:.2f}")
+                    st.markdown("**Post-Crisis Recovery (Average):**")
+                    st.metric("Recovery (mean)", f"{recovery_percentage:.1f}%", delta=None)
+                    st.caption(f"Avg post-crisis close: ${post_crisis_avg:.2f}")
+                    
+                    with st.container():
+                        st.markdown("---")  # Thin divider line
+                        # SUB BLOCK: Current Price Recovery
+                        st.markdown("**Current Price Recovery**")
+                        st.metric("Current recovery", f"{current_recovery_percentage:.1f}%")
+                        st.caption(f"Current price: ${current_postcrisis_price:.2f}")
+                        st.caption(f"Difference from crisis min: ${current_postcrisis_price - crisis_min:.2f}")
                 else:
                     st.metric("Post-Crisis Recovery", "Not enough data")
+
 
             # ---- Economic Damage Estimate ----
             try:
