@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import pytz
 import warnings
@@ -18,7 +19,6 @@ st.set_page_config(
 st.title("🚨 Reputational Crisis Impact Analysis Tool")
 st.markdown("**Analyze the economic impact of reputational crises on stock prices**")
 
-# Sidebar - Input Controls
 st.sidebar.header("Crisis Analysis Parameters")
 ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
 TIMEZONE_OPTIONS = [
@@ -38,7 +38,6 @@ mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_
 if mitigation_end_date < mitigation_start_date:
     st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
 
-# --- Stock Analysis Persistence Block ---
 if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisis Impact"):
     try:
         crisis_start = user_timezone.localize(datetime.combine(crisis_start_date, datetime.min.time()))
@@ -79,7 +78,6 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
         max_decline = ((crisis_min - pre_crisis_avg) / pre_crisis_avg) * 100
         avg_decline = ((crisis_avg - pre_crisis_avg) / pre_crisis_avg) * 100
 
-        # Post-crisis recovery (avg & current)
         if not post_crisis_data.empty:
             post_crisis_avg = post_crisis_data['Close'].mean()
             recovery_percentage = ((post_crisis_avg - crisis_min) / crisis_min) * 100
@@ -89,7 +87,6 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
             post_crisis_avg = current_postcrisis_price = np.nan
             recovery_percentage = current_recovery_percentage = None
 
-        # Estimate economic impact
         try:
             stock = yf.Ticker(ticker)
             company_info = stock.info
@@ -99,7 +96,6 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
             shares_outstanding = 1000000000
             market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
 
-        # Save analysis so we don't re-run unless "Analyze" is pressed
         st.session_state.analysis_result = dict(
             data=data,
             crisis_start_utc=crisis_start_utc,
@@ -125,16 +121,14 @@ if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisi
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
 
-# -------- Response Actions in Session State --------
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
 
-# --- Show Analysis Results and Chart ---
+# -------- Main Analysis Results and Metrics -----------
 if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
 
-    # ---- RESULTS METRICS LAYOUT ----
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
@@ -163,56 +157,74 @@ if "analysis_result" in st.session_state:
     st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
              f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
 
-    # --- Main Chart with Response Vertical Lines ---
-    fig = go.Figure()
+    # -------------------- Main Chart + Stacked Timeline Subplot -------------------
+    # Prepare response actions dates and labels
+    act_dates, act_labels = [], []
+    for action in st.session_state.response_actions:
+        if action.get("date"):
+            action_dt = datetime.combine(action['date'], datetime.min.time())
+            action_dt_aware = user_timezone.localize(action_dt) if action_dt.tzinfo is None else action_dt
+            action_dt_utc = action_dt_aware.astimezone(pytz.UTC)
+            action_dt_naive = action_dt_utc.replace(tzinfo=None)
+            act_dates.append(action_dt_naive)
+            label = action['description'] or "Response"
+            act_labels.append(label)
+
+    # Create a subplot figure: row 1 - price, row 2 - timeline dots
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        row_heights=[0.85, 0.15],
+        vertical_spacing=0.01,
+        row_titles=["Stock Price Chart", "Response Actions Timeline"]
+    )
+
+    # Main Price Line
     fig.add_trace(go.Scatter(
         x=data.index, y=data['Close'],
         mode='lines', name='Stock Price', line=dict(color='blue', width=2)
-    ))
-    # Crisis and mitigation periods
-    fig.add_vrect(
-        x0=res['crisis_start_utc'], x1=res['crisis_end_utc'],
-        fillcolor="red", opacity=0.2, layer="below", line_width=0,
-        annotation_text="Crisis Period", annotation_position="top left"
-    )
-    fig.add_vrect(
-        x0=res['mitigation_start_utc'], x1=res['mitigation_end_utc'],
-        fillcolor="green", opacity=0.13, layer="below", line_width=0,
-        annotation_text="Mitigation Period", annotation_position="top right"
-    )
-    fig.add_hline(y=res['pre_crisis_avg'], line_dash="dash", line_color="green",
-                  annotation_text="Pre-Crisis Average")
-    fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
-                  annotation_text="Crisis Minimum")
+    ), row=1, col=1)
 
-    # ---- Response Actions: timezone-naive datetime for x to avoid Plotly errors ----
-    for action in st.session_state.response_actions:
-        if action.get('date'):
-            try:
-                action_dt = datetime.combine(action['date'], datetime.min.time())
-                action_dt_aware = user_timezone.localize(action_dt) if action_dt.tzinfo is None else action_dt
-                action_dt_utc = action_dt_aware.astimezone(pytz.UTC)
-                action_dt_naive = action_dt_utc.replace(tzinfo=None)
-                min_index_naive = data.index.min().to_pydatetime().replace(tzinfo=None)
-                max_index_naive = data.index.max().to_pydatetime().replace(tzinfo=None)
-                if min_index_naive <= action_dt_naive <= max_index_naive:
-                    fig.add_vline(
-                        x=action_dt_naive,
-                        line_color="#045d1f",
-                        line_width=3,
-                        opacity=0.92,
-                        annotation_text=(action['description'] or "Response")
-                    )
-            except Exception as e:
-                st.warning(f"Failed to plot response action: {e}")
+    # Crisis/Mitigation periods, averages, min lines
+    fig.add_vrect(x0=res['crisis_start_utc'].replace(tzinfo=None), x1=res['crisis_end_utc'].replace(tzinfo=None),
+                  fillcolor="red", opacity=0.2, layer="below", line_width=0,
+                  annotation_text="Crisis Period", annotation_position="top left", row=1, col=1)
+    fig.add_vrect(x0=res['mitigation_start_utc'].replace(tzinfo=None), x1=res['mitigation_end_utc'].replace(tzinfo=None),
+                  fillcolor="green", opacity=0.13, layer="below", line_width=0,
+                  annotation_text="Mitigation Period", annotation_position="top right", row=1, col=1)
+    fig.add_hline(y=res['pre_crisis_avg'], line_dash="dash", line_color="green",
+                  annotation_text="Pre-Crisis Average", row=1, col=1)
+    fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
+                  annotation_text="Crisis Minimum", row=1, col=1)
+
+    # (Old vertical lines omitted)
+    # Add timeline event points to row 2
+    if act_dates:
+        fig.add_trace(go.Scatter(
+            x=act_dates,
+            y=np.ones(len(act_dates)),
+            mode="markers+text",
+            marker=dict(symbol="circle", size=16, color="#045d1f"),
+            text=act_labels,
+            textposition="top center",
+            name="Response Actions",
+            hovertext=act_labels,
+            showlegend=False
+        ), row=2, col=1)
+
+    # Timeline track styling
+    fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1, range=[0.8, 1.2], showgrid=False, zeroline=False, title=None)
+    fig.update_xaxes(title="Date", row=2, col=1)
+
+    # Price chart styling
+    fig.update_yaxes(title="Price ($)", row=1, col=1)
 
     fig.update_layout(
+        height=700,
         title=f"{ticker} Stock Price During Crisis & Mitigation",
-        xaxis_title="Date",
-        yaxis_title="Price ($)",
-        height=600,
         showlegend=True
     )
+
     st.plotly_chart(fig, use_container_width=True)
 
     # -------- Add/Remove Response Actions Editor (Below Chart) ---------
@@ -291,9 +303,8 @@ if "analysis_result" in st.session_state:
             fillcolor="green", opacity=0.12, line_width=0)
         st.plotly_chart(vol_fig, use_container_width=True)
 
-    # Optionally, summary table of response actions
     if st.session_state.response_actions:
-        st.subheader("🛠️ Response Actions Timeline")
+        st.subheader("🛠️ Response Actions Timeline Table")
         response_action_rows = [
             {"Date": str(a['date']), "Description": a['description']}
             for a in st.session_state.response_actions if a['date'] and a['description']
@@ -331,7 +342,7 @@ else:
 
     The app analyzes and visualizes:
     - Crisis and mitigation periods, including economic impact estimates.
-    - Each distinct response action as a dark green line on the price chart (edit anytime).
+    - Response actions as a dot-labeled event track below the main price chart.
     - Post-crisis recovery metrics: both average and latest closing price.
     - All calculations are timezone-robust and clearly visualized.
     """)
@@ -343,4 +354,4 @@ else:
     """)
 
 st.markdown("---")
-st.markdown("**Crisis Impact Analysis Tool** – Add response actions below the chart anytime. Built with Streamlit, yfinance, and robust timezone support.")
+st.markdown("**Crisis Impact Analysis Tool** – Add response actions below the chart anytime. Features a timeline event track for clarity. Built with Streamlit, yfinance, and robust timezone support.")
