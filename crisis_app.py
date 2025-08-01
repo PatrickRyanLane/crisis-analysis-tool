@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import pytz
 import warnings
+
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
@@ -17,11 +18,9 @@ st.set_page_config(
 st.title("🚨 Reputational Crisis Impact Analysis Tool")
 st.markdown("**Analyze the economic impact of reputational crises on stock prices**")
 
-# Sidebar for inputs
+# Sidebar - Input Controls
 st.sidebar.header("Crisis Analysis Parameters")
-
 ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
-
 TIMEZONE_OPTIONS = [
     "America/New_York",
     "UTC",
@@ -32,281 +31,287 @@ TIMEZONE_OPTIONS = [
 user_tz_str = st.sidebar.selectbox("Select Timezone for Input Dates", TIMEZONE_OPTIONS, index=0)
 user_timezone = pytz.timezone(user_tz_str)
 
-# -- Date inputs --
 crisis_start_date = st.sidebar.date_input("Crisis Start Date", value=datetime(2022, 1, 1))
 crisis_end_date = st.sidebar.date_input("Crisis End Date", value=datetime(2022, 6, 30))
-
 mitigation_start_date = st.sidebar.date_input("Mitigation Start Date", value=crisis_end_date)
 mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_end_date + timedelta(days=90))
 if mitigation_end_date < mitigation_start_date:
     st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
 
-# -- Response Actions --
-st.sidebar.markdown("### Response Actions Taken")
-if 'response_actions' not in st.session_state:
-    st.session_state.response_actions = []
-
-def add_response_action():
-    st.session_state.response_actions.append({'date': None, 'description': ''})
-
-if st.sidebar.button("Add Response Action"):
-    add_response_action()
-
-to_remove = []
-for i, action in enumerate(st.session_state.response_actions):
-    col1, col2, col3 = st.sidebar.columns([3, 6, 1])
-    with col1:
-        date_val = st.date_input(
-            f"Action Date #{i+1}",
-            value=action['date'] if action['date'] else crisis_start_date,
-            key=f"action_date_{i}"
-        )
-    with col2:
-        desc_val = st.text_input(
-            "Description",
-            value=action['description'],
-            key=f"action_desc_{i}"
-        )
-    with col3:
-        if st.button("❌", key=f"delete_{i}"):
-            to_remove.append(i)
-    st.session_state.response_actions[i]['date'] = date_val
-    st.session_state.response_actions[i]['description'] = desc_val
-for i in reversed(to_remove):
-    st.session_state.response_actions.pop(i)
-    st.experimental_rerun()
-
-if st.sidebar.button("Analyze Crisis Impact"):
+# --- Stock Analysis Persistence Block ---
+if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisis Impact"):
     try:
-        with st.spinner("Fetching stock data..."):
-            crisis_start = user_timezone.localize(datetime.combine(crisis_start_date, datetime.min.time()))
-            crisis_end = user_timezone.localize(datetime.combine(crisis_end_date, datetime.min.time()))
-            mitigation_start = user_timezone.localize(datetime.combine(mitigation_start_date, datetime.min.time()))
-            mitigation_end = user_timezone.localize(datetime.combine(mitigation_end_date, datetime.min.time()))
+        crisis_start = user_timezone.localize(datetime.combine(crisis_start_date, datetime.min.time()))
+        crisis_end = user_timezone.localize(datetime.combine(crisis_end_date, datetime.min.time()))
+        mitigation_start = user_timezone.localize(datetime.combine(mitigation_start_date, datetime.min.time()))
+        mitigation_end = user_timezone.localize(datetime.combine(mitigation_end_date, datetime.min.time()))
+        start_date = min(crisis_start, mitigation_start) - timedelta(days=90)
+        end_date = max(crisis_end, mitigation_end) + timedelta(days=90)
 
-            start_date = min(crisis_start, mitigation_start) - timedelta(days=90)
-            end_date = max(crisis_end, mitigation_end) + timedelta(days=90)
+        data = yf.Ticker(ticker).history(start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
+        if data.empty:
+            st.error("No data found for this ticker. Please check the symbol.")
+            st.stop()
+        if data.index.tz is None:
+            data.index = data.index.tz_localize('UTC')
+        else:
+            data.index = data.index.tz_convert('UTC')
 
-            data = yf.Ticker(ticker).history(start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
-            if data.empty:
-                st.error("No data found for this ticker. Please check the symbol.")
-                st.stop()
+        crisis_start_utc = crisis_start.astimezone(pytz.UTC)
+        crisis_end_utc = crisis_end.astimezone(pytz.UTC)
+        mitigation_start_utc = mitigation_start.astimezone(pytz.UTC)
+        mitigation_end_utc = mitigation_end.astimezone(pytz.UTC)
 
-            if data.index.tz is None:
-                data.index = data.index.tz_localize('UTC')
-            else:
-                data.index = data.index.tz_convert('UTC')
+        pre_crisis_data = data[data.index < crisis_start_utc]
+        crisis_data = data[(data.index >= crisis_start_utc) & (data.index <= crisis_end_utc)]
+        post_crisis_data = data[data.index > crisis_end_utc]
+        mitigation_data = data[(data.index >= mitigation_start_utc) & (data.index <= mitigation_end_utc)]
 
-            crisis_start_utc = crisis_start.astimezone(pytz.UTC)
-            crisis_end_utc = crisis_end.astimezone(pytz.UTC)
-            mitigation_start_utc = mitigation_start.astimezone(pytz.UTC)
-            mitigation_end_utc = mitigation_end.astimezone(pytz.UTC)
+        if pre_crisis_data.empty or crisis_data.empty:
+            st.error("Insufficient data for the selected date range.")
+            st.stop()
 
-            pre_crisis_data = data[data.index < crisis_start_utc]
-            crisis_data = data[(data.index >= crisis_start_utc) & (data.index <= crisis_end_utc)]
-            post_crisis_data = data[data.index > crisis_end_utc]
-            mitigation_data = data[(data.index >= mitigation_start_utc) & (data.index <= mitigation_end_utc)]
+        pre_crisis_avg = pre_crisis_data['Close'].mean()
+        crisis_min = crisis_data['Close'].min()
+        crisis_avg = crisis_data['Close'].mean()
+        mitigation_avg = mitigation_data['Close'].mean() if not mitigation_data.empty else np.nan
+        mitigation_vol = mitigation_data['Close'].std() if not mitigation_data.empty else np.nan
+        max_decline = ((crisis_min - pre_crisis_avg) / pre_crisis_avg) * 100
+        avg_decline = ((crisis_avg - pre_crisis_avg) / pre_crisis_avg) * 100
 
-            if pre_crisis_data.empty or crisis_data.empty:
-                st.error("Insufficient data for the selected date range.")
-                st.stop()
+        # Post-crisis recovery (avg & current)
+        if not post_crisis_data.empty:
+            post_crisis_avg = post_crisis_data['Close'].mean()
+            recovery_percentage = ((post_crisis_avg - crisis_min) / crisis_min) * 100
+            current_postcrisis_price = post_crisis_data['Close'].iloc[-1]
+            current_recovery_percentage = ((current_postcrisis_price - crisis_min) / crisis_min) * 100
+        else:
+            post_crisis_avg = current_postcrisis_price = np.nan
+            recovery_percentage = current_recovery_percentage = None
 
-            pre_crisis_avg = pre_crisis_data['Close'].mean()
-            crisis_min = crisis_data['Close'].min()
-            crisis_max = crisis_data['Close'].max()
-            crisis_avg = crisis_data['Close'].mean()
-            mitigation_avg = mitigation_data['Close'].mean() if not mitigation_data.empty else np.nan
-            mitigation_vol = mitigation_data['Close'].std() if not mitigation_data.empty else np.nan
+        # Estimate economic impact
+        try:
+            stock = yf.Ticker(ticker)
+            company_info = stock.info
+            shares_outstanding = company_info.get('sharesOutstanding', 1000000000)
+            market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
+        except Exception:
+            shares_outstanding = 1000000000
+            market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
 
-            max_decline = ((crisis_min - pre_crisis_avg) / pre_crisis_avg) * 100
-            avg_decline = ((crisis_avg - pre_crisis_avg) / pre_crisis_avg) * 100
-
-            # -- Post-crisis recovery (avg & current) --
-            if not post_crisis_data.empty:
-                post_crisis_avg = post_crisis_data['Close'].mean()
-                recovery_percentage = ((post_crisis_avg - crisis_min) / crisis_min) * 100
-                current_postcrisis_price = post_crisis_data['Close'].iloc[-1]
-                current_recovery_percentage = ((current_postcrisis_price - crisis_min) / crisis_min) * 100
-                recovery_info = (
-                    f"Avg: {recovery_percentage:.1f}% (mean)\n"
-                    f"Current: {current_recovery_percentage:.1f}% (latest close)"
-                )
-            else:
-                post_crisis_avg = current_postcrisis_price = np.nan
-                recovery_percentage = current_recovery_percentage = None
-                recovery_info = "Not enough post-crisis data"
-
-            # ---- Metrics Display ----
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Pre-Crisis Avg", f"${pre_crisis_avg:.2f}")
-            with col2:
-                st.metric("Crisis Minimum", f"${crisis_min:.2f}", delta=f"{max_decline:.1f}%")
-            with col3:
-                st.metric("Crisis Avg", f"${crisis_avg:.2f}", delta=f"{avg_decline:.1f}%")
-            with col4:
-                # MAIN block: Average Post-Crisis Recovery
-                if not post_crisis_data.empty:
-                    st.markdown("**Post-Crisis Recovery (Average):**")
-                    st.metric("Recovery (mean)", f"{recovery_percentage:.1f}%", delta=None)
-                    st.caption(f"Avg post-crisis close: ${post_crisis_avg:.2f}")
-                    
-                    with st.container():
-                        st.markdown("---")  # Thin divider line
-                        # SUB BLOCK: Current Price Recovery
-                        st.markdown("**Current Price Recovery**")
-                        st.metric("Current recovery", f"{current_recovery_percentage:.1f}%")
-                        st.caption(f"Current price: ${current_postcrisis_price:.2f}")
-                        st.caption(f"Difference from crisis min: ${current_postcrisis_price - crisis_min:.2f}")
-                else:
-                    st.metric("Post-Crisis Recovery", "Not enough data")
-
-
-            # ---- Economic Damage Estimate ----
-            try:
-                stock = yf.Ticker(ticker)
-                company_info = stock.info
-                shares_outstanding = company_info.get('sharesOutstanding', 1000000000)
-                market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
-
-                st.subheader("💰 Economic Impact Analysis")
-                st.write(f"**Estimated Market Cap Loss:** ${market_cap_loss:,.0f}")
-                st.write(f"**Maximum Stock Price Decline:** {abs(max_decline):.1f}%")
-                st.write(f"**Crisis Duration:** {(crisis_end - crisis_start).days} days")
-                st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} ({(mitigation_end - mitigation_start).days} days)")
-            except Exception:
-                st.write("**Market cap data unavailable for detailed economic impact calculation**")
-
-            # ---- Main Chart ----
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=data.index, y=data['Close'],
-                mode='lines', name='Stock Price', line=dict(color='blue', width=2)
-            ))
-            fig.add_vrect(
-                x0=crisis_start_utc, x1=crisis_end_utc,
-                fillcolor="red", opacity=0.2, layer="below", line_width=0,
-                annotation_text="Crisis Period", annotation_position="top left"
-            )
-            fig.add_vrect(
-                x0=mitigation_start_utc, x1=mitigation_end_utc,
-                fillcolor="green", opacity=0.13, layer="below", line_width=0,
-                annotation_text="Mitigation Period", annotation_position="top right"
-            )
-            fig.add_hline(y=pre_crisis_avg, line_dash="dash", line_color="green",
-                          annotation_text="Pre-Crisis Average")
-            fig.add_hline(y=crisis_min, line_dash="dash", line_color="red",
-                          annotation_text="Crisis Minimum")
-
-            # Response actions
-            for action in st.session_state.response_actions:
-                if action['date'] and action['description']:
-                    action_dt = user_timezone.localize(datetime.combine(action['date'], datetime.min.time()))
-                    action_dt_utc = action_dt.astimezone(pytz.UTC)
-                    if data.index.min() <= action_dt_utc <= data.index.max():
-                        closest_idx = data.index.get_indexer([action_dt_utc], method='nearest')[0]
-                        action_price = data.iloc[closest_idx]['Close']
-                        fig.add_trace(go.Scatter(
-                            x=[data.index[closest_idx]],
-                            y=[action_price],
-                            mode='markers+text',
-                            marker=dict(symbol='star', size=13, color='gold'),
-                            text=[action['description']],
-                            textposition='top center',
-                            name=f"Action: {action['description']}"
-                        ))
-
-            fig.update_layout(
-                title=f"{ticker} Stock Price During Crisis & Mitigation",
-                xaxis_title="Date",
-                yaxis_title="Price ($)",
-                height=600,
-                showlegend=True
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-            # Timeline Table
-            st.subheader("📈 Timeline Analysis")
-            timeline_data = pd.DataFrame({
-                'Period': [
-                    'Pre-Crisis (90 days)', 
-                    'Crisis Period', 
-                    'Mitigation Period',
-                    'Post-Crisis (90 days)'
-                ],
-                'Average Price': [
-                    pre_crisis_avg,
-                    crisis_avg,
-                    mitigation_avg,
-                    post_crisis_data['Close'].mean() if not post_crisis_data.empty else np.nan
-                ],
-                'Volatility': [
-                    pre_crisis_data['Close'].std(),
-                    crisis_data['Close'].std(),
-                    mitigation_vol,
-                    post_crisis_data['Close'].std() if not post_crisis_data.empty else np.nan
-                ]
-            }).dropna()
-            st.dataframe(timeline_data.round(2), use_container_width=True)
-
-            # Trading Volume Chart
-            if 'Volume' in data.columns:
-                st.subheader("📊 Trading Volume Analysis")
-                vol_fig = go.Figure()
-                vol_fig.add_trace(go.Scatter(
-                    x=data.index,
-                    y=data['Volume'],
-                    mode='lines',
-                    name='Trading Volume',
-                    line=dict(color='orange', width=1)
-                ))
-                vol_fig.add_vrect(
-                    x0=crisis_start_utc, x1=crisis_end_utc,
-                    fillcolor="red", opacity=0.18, line_width=0)
-                vol_fig.add_vrect(
-                    x0=mitigation_start_utc, x1=mitigation_end_utc,
-                    fillcolor="green", opacity=0.12, line_width=0)
-                vol_fig.update_layout(
-                    title=f"{ticker} Trading Volume During Crisis and Mitigation",
-                    xaxis_title="Date",
-                    yaxis_title="Volume",
-                    height=350
-                )
-                st.plotly_chart(vol_fig, use_container_width=True)
-
-            # Response Actions Table
-            if st.session_state.response_actions:
-                st.subheader("🛠️ Response Actions Timeline")
-                response_action_rows = [
-                    {"Date": str(a['date']), "Description": a['description']}
-                    for a in st.session_state.response_actions if a['date'] and a['description']
-                ]
-                if response_action_rows:
-                    st.table(pd.DataFrame(response_action_rows))
-            
-            # Summary
-            st.subheader("🎯 Crisis Impact Summary")
-            impact_severity = "High" if abs(max_decline) > 30 else \
-                              "Moderate" if abs(max_decline) > 15 else \
-                              "Low"
-            st.write(f"""
-            **Crisis Severity:** {impact_severity} Impact
-
-            **Key Findings:**
-            - Maximum price decline of {abs(max_decline):.1f}% during the crisis period
-            - Stock fell from ${pre_crisis_avg:.2f} average to ${crisis_min:.2f} minimum
-            - Crisis lasted {(crisis_end - crisis_start).days} days
-            - Mitigation actions and timeframe shown above
-            - Recovery from crisis minimum:
-                - Avg post-crisis: {recovery_percentage:.1f}% (${post_crisis_avg:.2f})
-                - Current: {current_recovery_percentage:.1f}% (${current_postcrisis_price:.2f}) 
-            """ if not post_crisis_data.empty else """
-            Post-crisis recovery metrics not available (not enough post-crisis data).
-            """)
-
+        # Save analysis so we don't re-run unless "Analyze" is pressed
+        st.session_state.analysis_result = dict(
+            data=data,
+            crisis_start_utc=crisis_start_utc,
+            crisis_end_utc=crisis_end_utc,
+            mitigation_start_utc=mitigation_start_utc,
+            mitigation_end_utc=mitigation_end_utc,
+            pre_crisis_avg=pre_crisis_avg,
+            crisis_min=crisis_min,
+            crisis_avg=crisis_avg,
+            mitigation_avg=mitigation_avg,
+            mitigation_vol=mitigation_vol,
+            max_decline=max_decline,
+            avg_decline=avg_decline,
+            post_crisis_data=post_crisis_data,
+            post_crisis_avg=post_crisis_avg,
+            current_postcrisis_price=current_postcrisis_price,
+            recovery_percentage=recovery_percentage,
+            current_recovery_percentage=current_recovery_percentage,
+            shares_outstanding=shares_outstanding,
+            market_cap_loss=market_cap_loss
+        )
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
+
+# --- Response Actions State and Editor ---
+if "response_actions" not in st.session_state:
+    st.session_state.response_actions = []
+
+st.markdown("### 🛠️ Crisis Response Actions (Edit and See Chart Update Instantly)")
+
+# Actions Editor (Add/Edit/Delete)
+add_col, _, _ = st.columns([2, 1, 5])
+with add_col:
+    if st.button("+ Add Response Action"):
+        st.session_state.response_actions.append({'date': None, 'description': ''})
+
+rem_indices = []
+for i, action in enumerate(st.session_state.response_actions):
+    cols = st.columns([2, 6, 1])
+    with cols[0]:
+        date_val = st.date_input(
+            f"Action Date #{i + 1}",
+            value=action['date'] if action['date'] else crisis_start_date,
+            key=f"action_date_main_{i}",
+            label_visibility="collapsed"
+        )
+    with cols[1]:
+        desc_val = st.text_input(
+            f"Description #{i + 1}",
+            value=action['description'],
+            key=f"action_desc_main_{i}",
+            label_visibility="collapsed"
+        )
+    with cols[2]:
+        if st.button("❌", key=f"delete_main_{i}"):
+            rem_indices.append(i)
+    st.session_state.response_actions[i]['date'] = date_val
+    st.session_state.response_actions[i]['description'] = desc_val
+for i in reversed(rem_indices):
+    st.session_state.response_actions.pop(i)
+
+# --- Show Analysis Results and Chart ---
+if "analysis_result" in st.session_state:
+    res = st.session_state.analysis_result
+    data = res['data']
+
+    # Results Metrics Layout
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
+    with col2:
+        st.metric("Crisis Minimum", f"${res['crisis_min']:.2f}", delta=f"{res['max_decline']:.1f}%")
+    with col3:
+        st.metric("Crisis Avg", f"${res['crisis_avg']:.2f}", delta=f"{res['avg_decline']:.1f}%")
+    # Improved visual separation for recovery
+    with col4:
+        if not res['post_crisis_data'].empty:
+            st.markdown("**Post-Crisis Recovery (Average):**")
+            st.metric("Recovery (mean)", f"{res['recovery_percentage']:.1f}%")
+            st.caption(f"Avg post-crisis close: ${res['post_crisis_avg']:.2f}")
+            st.markdown("---")
+            st.markdown("**Current Price Recovery**")
+            st.metric("Current recovery", f"{res['current_recovery_percentage']:.1f}%")
+            st.caption(f"Current price: ${res['current_postcrisis_price']:.2f}")
+            st.caption(f"Difference from crisis min: "
+                       f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
+        else:
+            st.metric("Post-Crisis Recovery", "Not enough data")
+
+    st.subheader("💰 Economic Impact Analysis")
+    st.write(f"**Estimated Market Cap Loss:** ${res['market_cap_loss']:,.0f}")
+    st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
+    st.write(f"**Crisis Duration:** {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days")
+    st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
+             f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
+
+    # --- Main Chart with Response Vertical Lines ---
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=data.index, y=data['Close'],
+        mode='lines', name='Stock Price', line=dict(color='blue', width=2)
+    ))
+    # Crisis and mitigation periods
+    fig.add_vrect(
+        x0=res['crisis_start_utc'], x1=res['crisis_end_utc'],
+        fillcolor="red", opacity=0.2, layer="below", line_width=0,
+        annotation_text="Crisis Period", annotation_position="top left"
+    )
+    fig.add_vrect(
+        x0=res['mitigation_start_utc'], x1=res['mitigation_end_utc'],
+        fillcolor="green", opacity=0.13, layer="below", line_width=0,
+        annotation_text="Mitigation Period", annotation_position="top right"
+    )
+    fig.add_hline(y=res['pre_crisis_avg'], line_dash="dash", line_color="green",
+                  annotation_text="Pre-Crisis Average")
+    fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
+                  annotation_text="Crisis Minimum")
+    # Response Actions - as dark green vertical lines
+    for action in st.session_state.response_actions:
+        if action['date']:
+            action_dt = user_timezone.localize(datetime.combine(action['date'], datetime.min.time()))
+            action_dt_utc = action_dt.astimezone(pytz.UTC)
+            if data.index.min() <= action_dt_utc <= data.index.max():
+                fig.add_vline(
+                    x=action_dt_utc,
+                    line_color="#045d1f",
+                    line_width=3,
+                    opacity=0.92,
+                    annotation_text=(action['description'] or "Response"),
+                    annotation_position="top left"
+                )
+    fig.update_layout(
+        title=f"{ticker} Stock Price During Crisis & Mitigation",
+        xaxis_title="Date",
+        yaxis_title="Price ($)",
+        height=600,
+        showlegend=True
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # -- Timeline Table --
+    st.subheader("📈 Timeline Analysis")
+    post_crisis_data = res['post_crisis_data']
+    timeline_data = pd.DataFrame({
+        'Period': [
+            'Pre-Crisis (90 days)',
+            'Crisis Period',
+            'Mitigation Period',
+            'Post-Crisis (90 days)'
+        ],
+        'Average Price': [
+            res['pre_crisis_avg'],
+            res['crisis_avg'],
+            res['mitigation_avg'],
+            post_crisis_data['Close'].mean() if not post_crisis_data.empty else np.nan
+        ],
+        'Volatility': [
+            data[data.index < res['crisis_start_utc']]['Close'].std(),
+            data[(data.index >= res['crisis_start_utc']) & (data.index <= res['crisis_end_utc'])]['Close'].std(),
+            res['mitigation_vol'],
+            post_crisis_data['Close'].std() if not post_crisis_data.empty else np.nan
+        ]
+    }).dropna()
+    st.dataframe(timeline_data.round(2), use_container_width=True)
+
+    # Trading Volume Chart
+    if 'Volume' in data.columns:
+        st.subheader("📊 Trading Volume Analysis")
+        vol_fig = go.Figure()
+        vol_fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data['Volume'],
+            mode='lines',
+            name='Trading Volume',
+            line=dict(color='orange', width=1)
+        ))
+        vol_fig.add_vrect(
+            x0=res['crisis_start_utc'], x1=res['crisis_end_utc'],
+            fillcolor="red", opacity=0.18, line_width=0)
+        vol_fig.add_vrect(
+            x0=res['mitigation_start_utc'], x1=res['mitigation_end_utc'],
+            fillcolor="green", opacity=0.12, line_width=0)
+        st.plotly_chart(vol_fig, use_container_width=True)
+
+    if st.session_state.response_actions:
+        st.subheader("🛠️ Response Actions Timeline")
+        response_action_rows = [
+            {"Date": str(a['date']), "Description": a['description']}
+            for a in st.session_state.response_actions if a['date'] and a['description']
+        ]
+        if response_action_rows:
+            st.table(pd.DataFrame(response_action_rows))
+
+    st.subheader("🎯 Crisis Impact Summary")
+    impact_severity = "High" if abs(res['max_decline']) > 30 else \
+                      "Moderate" if abs(res['max_decline']) > 15 else \
+                      "Low"
+    st.write(f"""
+    **Crisis Severity:** {impact_severity} Impact
+
+    **Key Findings:**
+    - Maximum price decline of {abs(res['max_decline']):.1f}% during the crisis period
+    - Stock fell from ${res['pre_crisis_avg']:.2f} average to ${res['crisis_min']:.2f} minimum
+    - Crisis lasted {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days
+    - Mitigation actions and timeframe shown above
+    - Recovery from crisis minimum:
+        - Avg post-crisis: {res['recovery_percentage']:.1f}% (${res['post_crisis_avg']:.2f})
+        - Current: {res['current_recovery_percentage']:.1f}% (${res['current_postcrisis_price']:.2f}) 
+    """ if not post_crisis_data.empty else """
+    Post-crisis recovery metrics not available (not enough post-crisis data).
+    """)
 
 else:
     st.subheader("📋 How to Use This Tool")
@@ -314,16 +319,16 @@ else:
     1. **Enter a stock ticker** (e.g., TSLA, AAPL, META) in the sidebar.
     2. **Select the timezone** corresponding to your crisis and mitigation date inputs.
     3. **Select crisis, mitigation start and end dates** in any order.
-    4. **Optionally add multiple "Response Actions"**—each with a date and description.
-    5. **Click 'Analyze Crisis Impact'** to generate the full analysis.
+    4. **Add "Response Actions"**—each with a date and description. 
+       Add/remove these at any time; the chart updates instantly.
+    5. **Click 'Analyze Crisis Impact'** to load and analyze the stock data.
 
     The app analyzes and visualizes:
     - Crisis and mitigation periods, including economic impact estimates.
-    - Each distinct response action as a special marker on the timeline.
+    - Each distinct response action as a dark green line on the price chart (edit anytime).
     - Post-crisis recovery metrics: both average and latest closing price.
     - All calculations are timezone-robust and clearly visualized.
     """)
-
     st.subheader("🔍 Example Crisis Events You Can Analyze")
     st.write("""
     - **Tesla (TSLA)**: Twitter acquisition period (Jan-Jun 2022)
@@ -332,4 +337,4 @@ else:
     """)
 
 st.markdown("---")
-st.markdown("**Crisis Impact Analysis Tool** - Built with Streamlit, yfinance, and robust timezone support.")
+st.markdown("**Crisis Impact Analysis Tool** – Add response actions below the chart anytime. Built with Streamlit, yfinance, and robust timezone support.")
