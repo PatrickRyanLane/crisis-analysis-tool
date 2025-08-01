@@ -131,7 +131,7 @@ if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
 
-    col1, col2, col3, col4, col5 = st.columns(6)
+    col1, col2, col3, col4, col5, col6= st.columns(6)
     with col1:
         st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
     with col2:
