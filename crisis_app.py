@@ -48,6 +48,9 @@ if mitigation_end_date < mitigation_start_date:
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
 
+if "edit_index" not in st.session_state:
+    st.session_state.edit_index = None  # None means not editing an action
+
 # --- Helper functions ---
 def get_text_positions(dates, labels):
     """
@@ -59,8 +62,6 @@ def get_text_positions(dates, labels):
     date_label_pairs = list(zip(dates, labels))
     date_label_pairs.sort(key=lambda x: x[0])
     positions = []
-    position_options = ['top center', 'bottom center', 'middle left', 'middle right',
-                        'top left', 'top right', 'bottom left', 'bottom right']
     for i, (date, label) in enumerate(date_label_pairs):
         if i % 4 == 0:
             positions.append('top center')
@@ -75,6 +76,76 @@ def get_text_positions(dates, labels):
     position_map = {sorted_indices[i]: positions[i] for i in range(len(positions))}
     original_order_positions = [position_map[i] for i in range(len(dates))]
     return original_order_positions
+
+
+def render_response_actions_table():
+    st.subheader("🗓️ Current Response Actions (Editable)")
+    if not st.session_state.response_actions:
+        st.info("No response actions added yet.")
+        return
+
+    for idx, action in enumerate(st.session_state.response_actions):
+        cols = st.columns([5, 1, 1])
+        cols[0].markdown(f"📅 **{action['date']}** — {action['description']}")
+        if cols[1].button("Edit", key=f"edit_{idx}"):
+            st.session_state.edit_index = idx
+            st.experimental_rerun()
+        if cols[2].button("Delete", key=f"delete_{idx}"):
+            st.session_state.response_actions.pop(idx)
+            if st.session_state.edit_index == idx:
+                st.session_state.edit_index = None
+            st.experimental_rerun()
+
+
+def render_edit_form(idx):
+    action = st.session_state.response_actions[idx]
+    with st.form("edit_action_form", clear_on_submit=False):
+        edit_date = st.date_input(
+            "Edit Action Date",
+            value=action['date']
+        )
+        edit_desc = st.text_input(
+            "Edit Action Description",
+            value=action['description']
+        )
+        save = st.form_submit_button("Save Changes")
+        cancel = st.form_submit_button("Cancel")
+
+        if save:
+            if edit_desc.strip() and edit_date:
+                st.session_state.response_actions[idx] = {
+                    "date": edit_date,
+                    "description": edit_desc.strip()
+                }
+                st.session_state.edit_index = None
+                st.success("Action updated.")
+                st.experimental_rerun()
+            else:
+                st.warning("Please enter a valid date and description.")
+        elif cancel:
+            st.session_state.edit_index = None
+            st.experimental_rerun()
+
+
+def render_add_form():
+    with st.form("add_action_form", clear_on_submit=True):
+        new_action_date = st.date_input(
+            "Add New Action Date",
+            value=mitigation_start_date if mitigation_start_date else datetime.today().date(),
+        )
+        new_action_desc = st.text_input("Add New Action Description")
+        submitted = st.form_submit_button("Save New Action")
+
+        if submitted:
+            if new_action_desc.strip() and new_action_date:
+                st.session_state.response_actions.append(
+                    {"date": new_action_date, "description": new_action_desc.strip()}
+                )
+                st.success("New response action added.")
+                st.experimental_rerun()
+            else:
+                st.warning("Please enter a valid date and description.")
+
 
 # --- Stock data analysis ---
 if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisis Impact"):
@@ -276,34 +347,13 @@ if "analysis_result" in st.session_state:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # --------- Response Actions Editor Form BELOW the chart ---------
-    st.markdown("---")
-    st.markdown("### 🛠️ Add a Crisis Response Action")
+    # --------- Response Actions Editable List and Forms BELOW the chart ---------
+    render_response_actions_table()
 
-    with st.form("response_action_form", clear_on_submit=True):
-        new_action_date = st.date_input(
-            "Action Date",
-            value=mitigation_start_date if mitigation_start_date else datetime.today().date(),
-        )
-        new_action_desc = st.text_input("Action Description")
-        submitted = st.form_submit_button("Save Action")
-
-        if submitted:
-            if new_action_desc.strip() and new_action_date:
-                # Append the new action to session state list
-                st.session_state.response_actions.append(
-                    {"date": new_action_date, "description": new_action_desc.strip()}
-                )
-                st.success("Response action added.")
-            else:
-                st.warning("Please enter both a valid date and a non-empty description.")
-
-    # Optional: Show a table of current response actions
-    if st.session_state.response_actions:
-        st.subheader("🗓️ Current Response Actions")
-        df_actions = pd.DataFrame(st.session_state.response_actions)
-        df_actions['date'] = pd.to_datetime(df_actions['date']).dt.date
-        st.table(df_actions.rename(columns={"date": "Date", "description": "Description"}))
+    if st.session_state.edit_index is not None:
+        render_edit_form(st.session_state.edit_index)
+    else:
+        render_add_form()
 
     # -------- Additional Analysis Tables and Summaries ---------
     st.subheader("📈 Timeline Analysis")
