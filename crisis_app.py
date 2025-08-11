@@ -107,7 +107,7 @@ def editable_actions_list():
             st.session_state.response_actions.pop(i)
 
     if should_rerun:
-        st.experimental_rerun()
+        st.rerun()
 
 
 # --- Stock data analysis ---
@@ -326,7 +326,7 @@ if "analysis_result" in st.session_state:
                     {"date": new_action_date, "description": new_action_desc.strip()}
                 )
                 st.success("New response action added.")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.warning("Please enter a description.")
 
