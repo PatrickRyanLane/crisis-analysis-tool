@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import pytz
+from pytrends.request import TrendReq
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -23,6 +24,7 @@ st.markdown("**Analyze the economic impact of reputational crises on stock price
 st.sidebar.header("Crisis Analysis Parameters")
 
 ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
+st.sidebar.caption("The company name will be used for Google Trends search.")
 
 TIMEZONE_OPTIONS = [
     "America/New_York",
@@ -112,30 +114,71 @@ def editable_actions_list():
         st.rerun()
 
 
+# --- Data Fetching Functions with Caching ---
+@st.cache_data
+def get_stock_data(ticker, start_date, end_date):
+    """Fetches historical stock data and company info from Yahoo Finance and caches it."""
+    data = yf.Ticker(ticker).history(start=start_date, end=end_date)
+    if data.empty:
+        return None, None, None
+    # Ensure timezone is set to UTC for consistency
+    if data.index.tz is None:
+        data.index = data.index.tz_localize('UTC')
+    else:
+        data.index = data.index.tz_convert('UTC')
+
+    # Get company info
+    try:
+        stock_info = yf.Ticker(ticker).info
+        company_name = stock_info.get('longName', ticker)
+        shares_outstanding = stock_info.get('sharesOutstanding', 1000000000)
+    except Exception:
+        company_name = ticker
+        shares_outstanding = 1000000000
+
+    return data, company_name, shares_outstanding
+
+@st.cache_data
+def get_trends_data(keyword, start_date, end_date):
+    """Fetches Google Trends data and caches it."""
+    try:
+        pytrends = TrendReq(hl='en-US', tz=360)  # US Central Time
+        timeframe = f"{start_date} {end_date}"
+        pytrends.build_payload([keyword], cat=0, timeframe=timeframe, geo='', gprop='')
+        trends_df = pytrends.interest_over_time()
+
+        if not trends_df.empty and keyword in trends_df.columns:
+            trends_df = trends_df.drop(columns=['isPartial'])
+            # Resample to daily, forward-fill, and align timezone to UTC
+            daily_trends = trends_df.resample('D').ffill()
+            if daily_trends.index.tz is None:
+                daily_trends.index = daily_trends.index.tz_localize('UTC')
+            else:
+                daily_trends.index = daily_trends.index.tz_convert('UTC')
+            return daily_trends
+    except Exception as e:
+        # Silently fail but we can check for None later
+        print(f"Could not fetch Google Trends data for '{keyword}': {e}")
+    return None
+
+
 # --- Stock data analysis ---
 if "analysis_result" not in st.session_state or analyze_button_clicked:
     try:
         # Localize input dates to user timezone
         crisis_start = user_timezone.localize(datetime.combine(crisis_start_date, datetime.min.time()))
         crisis_end = user_timezone.localize(datetime.combine(crisis_end_date, datetime.min.time()))
-        mitigation_start = user_timezone.localize(datetime.combine(mitigation_start_date, datetime.min.time()))
-        mitigation_end = user_timezone.localize(datetime.combine(mitigation_end_date, datetime.min.time()))
-        start_date = min(crisis_start, mitigation_start) - timedelta(days=90)
-        end_date = max(crisis_end, mitigation_end) + timedelta(days=90)
+        start_date_obj = min(crisis_start.date(), mitigation_start_date) - timedelta(days=90)
+        end_date_obj = max(crisis_end.date(), mitigation_end_date) + timedelta(days=90)
 
-        # Fetch stock data
-        data = yf.Ticker(ticker).history(start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
-
-        if data.empty:
+        data, company_name, shares_outstanding = get_stock_data(ticker, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d"))
+        if data is None:
             st.error("No data found for this ticker. Please check the symbol.")
             st.stop()
 
-        if data.index.tz is None:
-            data.index = data.index.tz_localize('UTC')
-        else:
-            data.index = data.index.tz_convert('UTC')
-
         # Convert dates to UTC for consistent indexing
+        mitigation_start = user_timezone.localize(datetime.combine(mitigation_start_date, datetime.min.time()))
+        mitigation_end = user_timezone.localize(datetime.combine(mitigation_end_date, datetime.min.time()))
         crisis_start_utc = crisis_start.astimezone(pytz.UTC)
         crisis_end_utc = crisis_end.astimezone(pytz.UTC)
         mitigation_start_utc = mitigation_start.astimezone(pytz.UTC)
@@ -168,14 +211,12 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
             post_crisis_avg = current_postcrisis_price = np.nan
             recovery_percentage = current_recovery_percentage = None
 
-        try:
-            stock = yf.Ticker(ticker)
-            company_info = stock.info
-            shares_outstanding = company_info.get('sharesOutstanding', 1000000000)
-        except Exception:
-            shares_outstanding = 1000000000
-
         market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
+
+        # Fetch Google Trends data
+        trends_data = get_trends_data(
+            company_name, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d")
+        )
 
         st.session_state.analysis_result = dict(
             data=data,
@@ -197,6 +238,8 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
             current_recovery_percentage=current_recovery_percentage,
             shares_outstanding=shares_outstanding,
             market_cap_loss=market_cap_loss,
+            trends_data=trends_data,
+            company_name=company_name
         )
 
     except Exception as e:
@@ -208,6 +251,11 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
 if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
+    trends_data = res.get('trends_data')
+
+    # Notify user if trends data failed to load
+    if trends_data is None:
+        st.info(f"Could not retrieve Google Trends data for '{res.get('company_name', ticker)}'. The charts will not include the trends overlay.")
 
     col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -262,13 +310,22 @@ if "analysis_result" in st.session_state:
         row_heights=[0.85, 0.15],
         vertical_spacing=0.01,
         row_titles=["Stock Price Chart", "Response Actions Timeline"],
+        specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
     )
 
     # Price line trace
     fig.add_trace(go.Scatter(
         x=data.index, y=data['Close'],
         mode='lines', name='Stock Price', line=dict(color='blue', width=2)
-    ), row=1, col=1)
+    ), row=1, col=1, secondary_y=False)
+
+    # Google Trends trace
+    if trends_data is not None and not trends_data.empty:
+        keyword = res.get('company_name', 'Search Trend')
+        fig.add_trace(go.Scatter(
+            x=trends_data.index, y=trends_data[keyword],
+            mode='lines', name='Google Trend Score', line=dict(color='purple', width=1, dash='dot')
+        ), row=1, col=1, secondary_y=True)
 
     # Crisis & mitigation shaded rectangles
     fig.add_vrect(x0=res['crisis_start_utc'].replace(tzinfo=None), x1=res['crisis_end_utc'].replace(tzinfo=None),
@@ -300,10 +357,11 @@ if "analysis_result" in st.session_state:
     fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1,
                      range=[0.5, 1.5], showgrid=False, zeroline=False, title=None)
     fig.update_xaxes(title="Date", row=2, col=1)
-    fig.update_yaxes(title="Price ($)", row=1, col=1)
+    fig.update_yaxes(title_text="Price ($)", row=1, col=1, secondary_y=False)
+    fig.update_yaxes(title_text="Google Trend (0-100)", row=1, col=1, secondary_y=True, showgrid=False)
     fig.update_layout(
         height=700,
-        title=f"{ticker} Stock Price During Crisis & Mitigation",
+        title=f"{ticker} Stock Price & Google Trends During Crisis",
         showlegend=True
     )
 
@@ -363,14 +421,23 @@ if "analysis_result" in st.session_state:
     if 'Volume' in data.columns:
         st.subheader("📊 Trading Volume Analysis")
 
-        vol_fig = go.Figure()
+        vol_fig = make_subplots(specs=[[{"secondary_y": True}]])
+
         vol_fig.add_trace(go.Scatter(
             x=data.index,
             y=data['Volume'],
             mode='lines',
             name='Trading Volume',
             line=dict(color='orange', width=1)
-        ))
+        ), secondary_y=False)
+
+        if trends_data is not None and not trends_data.empty:
+            keyword = res.get('company_name', 'Search Trend')
+            vol_fig.add_trace(go.Scatter(
+                x=trends_data.index, y=trends_data[keyword],
+                mode='lines', name='Google Trend Score', line=dict(color='purple', width=1, dash='dot')
+            ), secondary_y=True)
+
         vol_fig.add_vrect(
             x0=res['crisis_start_utc'], x1=res['crisis_end_utc'],
             fillcolor="red", opacity=0.18, line_width=0
@@ -379,6 +446,13 @@ if "analysis_result" in st.session_state:
             x0=res['mitigation_start_utc'], x1=res['mitigation_end_utc'],
             fillcolor="green", opacity=0.12, line_width=0
         )
+
+        vol_fig.update_layout(
+            title_text=f"{ticker} Trading Volume & Google Trends",
+            showlegend=True
+        )
+        vol_fig.update_yaxes(title_text="Trading Volume", secondary_y=False)
+        vol_fig.update_yaxes(title_text="Google Trend (0-100)", secondary_y=True, showgrid=False)
         st.plotly_chart(vol_fig, use_container_width=True)
 
     # Crisis Impact Summary
