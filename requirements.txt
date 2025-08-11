@@ -3,4 +3,4 @@ yfinance
 pandas
 numpy
 plotly
-pytz
+pytrends
