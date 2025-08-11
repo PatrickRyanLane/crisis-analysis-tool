@@ -44,6 +44,8 @@ mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_
 if mitigation_end_date < mitigation_start_date:
     st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
 
+analyze_button_clicked = st.sidebar.button("Analyze Crisis Impact", type="primary")
+
 # Initialize response_actions in session state
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
@@ -111,7 +113,7 @@ def editable_actions_list():
 
 
 # --- Stock data analysis ---
-if "analysis_result" not in st.session_state or st.sidebar.button("Analyze Crisis Impact"):
+if "analysis_result" not in st.session_state or analyze_button_clicked:
     try:
         # Localize input dates to user timezone
         crisis_start = user_timezone.localize(datetime.combine(crisis_start_date, datetime.min.time()))
