@@ -48,13 +48,13 @@ mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_
 if mitigation_end_date < mitigation_start_date:
     st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
 
-analyze_button_clicked = st.sidebar.button("Analyze Crisis Impact", type="primary")
-
 # Initialize response_actions in session state
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
 if "trends_keyword_override" not in st.session_state:
     st.session_state.trends_keyword_override = ""
+if "last_analysis_params" not in st.session_state:
+    st.session_state.last_analysis_params = {}
 
 # --- Helper functions ---
 def simplify_company_name(name):
@@ -192,7 +192,25 @@ def get_trends_data(keyword, start_date, end_date):
 
 
 # --- Stock data analysis ---
-if "analysis_result" not in st.session_state or analyze_button_clicked:
+
+# Define the current set of parameters for the analysis
+current_params = {
+    "ticker": ticker,
+    "crisis_start_date": crisis_start_date,
+    "crisis_end_date": crisis_end_date,
+    "mitigation_start_date": mitigation_start_date,
+    "mitigation_end_date": mitigation_end_date,
+    "user_tz_str": user_tz_str,
+    "trends_keyword_override": st.session_state.get("trends_keyword_override", "").strip(),
+}
+
+# Determine if a new analysis should be run
+should_run_analysis = (
+    "analysis_result" not in st.session_state or
+    st.session_state.last_analysis_params != current_params
+)
+
+if should_run_analysis:
     try:
         # Localize input dates to user timezone
         crisis_start = user_timezone.localize(datetime.combine(crisis_start_date, datetime.min.time()))
@@ -244,7 +262,7 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
 
         # Fetch Google Trends data
         trends_keyword_override = st.session_state.get("trends_keyword_override", "")
-        trends_search_term = trends_keyword_override.strip() if trends_keyword_override.strip() else company_name
+        trends_search_term = current_params["trends_keyword_override"] if current_params["trends_keyword_override"] else company_name
         trends_data, related_queries = get_trends_data(
             trends_search_term, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d")
         )
@@ -274,6 +292,9 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
             company_name=company_name, # The simplified name
             trends_search_term=trends_search_term
         )
+
+        # Store the parameters of this successful analysis
+        st.session_state.last_analysis_params = current_params
 
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
@@ -331,7 +352,7 @@ if "analysis_result" in st.session_state:
         st.text_input(
             "Override with new keyword",
             key="trends_keyword_override",
-            help="Enter a new term and click 'Analyze Crisis Impact' in the sidebar to update."
+            help="Enter a new term and the analysis will update automatically."
         )
 
         related_queries = res.get('related_queries')
@@ -540,6 +561,6 @@ if "analysis_result" in st.session_state:
     """)
 
 else:
-    st.info("Please perform crisis impact analysis first to load stock data and charts.")
+    st.info("Enter a stock ticker and adjust the dates in the sidebar to begin your analysis.")
 
 # End of app
