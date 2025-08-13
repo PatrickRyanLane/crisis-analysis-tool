@@ -478,7 +478,7 @@ if "analysis_result" in st.session_state:
         shared_xaxes=True,
         row_heights=[0.85, 0.15],
         vertical_spacing=0.01,
-        row_titles=["Stock Price & Google Trends", "Response Actions Timeline"],
+        row_titles=["", "Response Actions<br>Timeline"],
         specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
     )
 
@@ -509,6 +509,13 @@ if "analysis_result" in st.session_state:
                   annotation_text="Pre-Crisis Average", row=1, col=1)
     fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
                   annotation_text="Crisis Minimum", row=1, col=1)
+
+    # Add a dummy trace to ensure the timeline subplot is always drawn,
+    # making the central line and x-axis visible even with no actions.
+    fig.add_trace(go.Scatter(
+        x=[data.index[0]], y=[0], mode='markers', marker=dict(opacity=0),
+        hoverinfo='none', showlegend=False
+    ), row=2, col=1)
 
     # Timeline event points with alternating stems for better visualization
     if act_dates:
