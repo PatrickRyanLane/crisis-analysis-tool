@@ -478,7 +478,7 @@ if "analysis_result" in st.session_state:
         shared_xaxes=True,
         row_heights=[0.85, 0.15],
         vertical_spacing=0.01,
-        row_titles=["Stock Price Chart", "Response Actions Timeline"],
+        row_titles=["", "Response Actions Timeline"],
         specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
     )
 
@@ -525,13 +525,14 @@ if "analysis_result" in st.session_state:
 
     fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1,
                      range=[0.5, 1.5], showgrid=False, zeroline=False, title=None)
-    fig.update_xaxes(title="Date", row=2, col=1)
+    fig.update_xaxes(title="Date", row=2, col=1, tickformat="%b %d, %Y")
     fig.update_yaxes(title_text="Price ($)", row=1, col=1, secondary_y=False)
     fig.update_yaxes(title_text="Google Trend (0-100)", row=1, col=1, secondary_y=True, showgrid=False)
     fig.update_layout(
         height=700,
         title=f"{ticker} Stock Price & Google Trends During Crisis",
-        showlegend=True
+        showlegend=True,
+        margin=dict(l=20, r=40, t=50, b=20) # Add margin to prevent label overlap
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -616,8 +617,10 @@ if "analysis_result" in st.session_state:
 
         vol_fig.update_layout(
             title_text=f"{ticker} Trading Volume & Google Trends",
-            showlegend=True
+            showlegend=True,
+            margin=dict(l=20, r=40, t=50, b=20)
         )
+        vol_fig.update_xaxes(tickformat="%b %d, %Y")
         vol_fig.update_yaxes(title_text="Trading Volume", secondary_y=False)
         vol_fig.update_yaxes(title_text="Google Trend (0-100)", secondary_y=True, showgrid=False)
         st.plotly_chart(vol_fig, use_container_width=True)
