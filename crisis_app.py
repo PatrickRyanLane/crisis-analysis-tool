@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import pytz
 import re
+import requests
 from pytrends.request import TrendReq
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import nltk
@@ -18,6 +19,14 @@ def get_sentiment_analyzer():
     """Downloads VADER lexicon if not present and returns an analyzer instance."""
     nltk.download('vader_lexicon', quiet=True)
     return SentimentIntensityAnalyzer()
+
+@st.cache_resource
+def get_yfinance_session():
+    """Creates a requests session with a user-agent to make yfinance more robust."""
+    session = requests.Session()
+    # Using a common browser user-agent can help avoid being blocked
+    session.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    return session
 
 sia = get_sentiment_analyzer()
 warnings.filterwarnings('ignore')
@@ -157,7 +166,9 @@ def editable_actions_list():
 @st.cache_data
 def get_stock_data(ticker, start_date, end_date):
     """Fetches historical stock data and company info from Yahoo Finance."""
-    data = yf.Ticker(ticker).history(start=start_date, end=end_date)
+    session = get_yfinance_session()
+    ticker_obj = yf.Ticker(ticker, session=session)
+    data = ticker_obj.history(start=start_date, end=end_date)
     if data.empty:
         return None, None, None
     # Ensure timezone is set to UTC for consistency
@@ -168,7 +179,7 @@ def get_stock_data(ticker, start_date, end_date):
 
     # Get company info
     try:
-        stock_info = yf.Ticker(ticker).info
+        stock_info = ticker_obj.info
         long_name = stock_info.get('longName', ticker)
         company_name = simplify_company_name(long_name)
         shares_outstanding = stock_info.get('sharesOutstanding', 1000000000)
@@ -182,7 +193,8 @@ def get_stock_data(ticker, start_date, end_date):
 def get_news_with_sentiment(ticker):
     """Fetches recent news, performs sentiment analysis, and caches the result."""
     try:
-        news_list = yf.Ticker(ticker).news
+        session = get_yfinance_session()
+        news_list = yf.Ticker(ticker, session=session).news
         processed_news = []
         if not news_list:
             return "no_news", []
