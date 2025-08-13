@@ -26,7 +26,6 @@ st.sidebar.header("Crisis Analysis Parameters")
 
 ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
 st.sidebar.caption("The company name will be used for Google Trends search.")
-trends_keyword_override = st.sidebar.text_input("Custom Google Trends Keyword (optional)", help="Override the company name with your own search term.")
 
 TIMEZONE_OPTIONS = [
     "America/New_York",
@@ -54,6 +53,8 @@ analyze_button_clicked = st.sidebar.button("Analyze Crisis Impact", type="primar
 # Initialize response_actions in session state
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
+if "trends_keyword_override" not in st.session_state:
+    st.session_state.trends_keyword_override = ""
 
 # --- Helper functions ---
 def simplify_company_name(name):
@@ -242,7 +243,8 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
         market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
 
         # Fetch Google Trends data
-        trends_search_term = trends_keyword_override if trends_keyword_override else company_name
+        trends_keyword_override = st.session_state.get("trends_keyword_override", "")
+        trends_search_term = trends_keyword_override.strip() if trends_keyword_override.strip() else company_name
         trends_data, related_queries = get_trends_data(
             trends_search_term, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d")
         )
@@ -269,7 +271,8 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
             market_cap_loss=market_cap_loss,
             trends_data=trends_data,
             related_queries=related_queries,
-            company_name=company_name # The simplified name
+            company_name=company_name, # The simplified name
+            trends_search_term=trends_search_term
         )
 
     except Exception as e:
@@ -285,8 +288,8 @@ if "analysis_result" in st.session_state:
 
     # Notify user if trends data failed to load
     if trends_data is None:
-        search_term = trends_keyword_override if trends_keyword_override else res.get('company_name', ticker)
-        st.info(f"Could not retrieve Google Trends data for '{search_term}'. The charts will not include the trends overlay.")
+        search_term_used = res.get('trends_search_term', ticker)
+        st.info(f"Could not retrieve Google Trends data for '{search_term_used}'. The charts will not include the trends overlay.")
 
     col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -323,8 +326,14 @@ if "analysis_result" in st.session_state:
 
     with impact_col2:
         st.subheader("📈 Google Trends Insights")
-        search_term = trends_keyword_override if trends_keyword_override else res.get('company_name', 'N/A')
+        search_term = res.get('trends_search_term', 'N/A')
         st.write(f"**Search Term Used:** `{search_term}`")
+        st.text_input(
+            "Override with new keyword",
+            key="trends_keyword_override",
+            help="Enter a new term and click 'Analyze Crisis Impact' in the sidebar to update."
+        )
+
         related_queries = res.get('related_queries')
         if related_queries is not None and not related_queries.empty:
             st.write("**Top 5 Related Search Queries:**")
