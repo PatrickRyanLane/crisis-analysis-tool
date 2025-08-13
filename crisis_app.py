@@ -141,13 +141,15 @@ def get_stock_data(ticker, start_date, end_date):
 
 @st.cache_data
 def get_trends_data(keyword, start_date, end_date):
-    """Fetches Google Trends data and caches it."""
+    """Fetches Google Trends data and related queries, then caches it."""
     try:
         pytrends = TrendReq(hl='en-US', tz=360)  # US Central Time
         timeframe = f"{start_date} {end_date}"
         pytrends.build_payload([keyword], cat=0, timeframe=timeframe, geo='', gprop='')
-        trends_df = pytrends.interest_over_time()
 
+        # Fetch interest over time
+        trends_df = pytrends.interest_over_time()
+        daily_trends = None
         if not trends_df.empty and keyword in trends_df.columns:
             trends_df = trends_df.drop(columns=['isPartial'])
             # Resample to daily, forward-fill, and align timezone to UTC
@@ -156,11 +158,20 @@ def get_trends_data(keyword, start_date, end_date):
                 daily_trends.index = daily_trends.index.tz_localize('UTC')
             else:
                 daily_trends.index = daily_trends.index.tz_convert('UTC')
-            return daily_trends
+
+        # Fetch related queries
+        related_queries_dict = pytrends.related_queries()
+        related_queries_df = None
+        if related_queries_dict and keyword in related_queries_dict:
+            top_queries = related_queries_dict[keyword].get('top')
+            if top_queries is not None:
+                related_queries_df = top_queries
+
+        return daily_trends, related_queries_df
     except Exception as e:
         # Silently fail but we can check for None later
         print(f"Could not fetch Google Trends data for '{keyword}': {e}")
-    return None
+    return None, None
 
 
 # --- Stock data analysis ---
@@ -215,7 +226,7 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
         market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
 
         # Fetch Google Trends data
-        trends_data = get_trends_data(
+        trends_data, related_queries = get_trends_data(
             company_name, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d")
         )
 
@@ -240,6 +251,7 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
             shares_outstanding=shares_outstanding,
             market_cap_loss=market_cap_loss,
             trends_data=trends_data,
+            related_queries=related_queries,
             company_name=company_name
         )
 
@@ -281,12 +293,25 @@ if "analysis_result" in st.session_state:
         else:
             st.metric("Post-Crisis Recovery", "Not enough data")
 
-    st.subheader("💰 Economic Impact Analysis")
-    st.write(f"**Estimated Market Cap Loss:** ${res['market_cap_loss']:,.0f}")
-    st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
-    st.write(f"**Crisis Duration:** {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days")
-    st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
-             f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
+    impact_col1, impact_col2 = st.columns(2)
+
+    with impact_col1:
+        st.subheader("💰 Economic Impact Analysis")
+        st.write(f"**Estimated Market Cap Loss:** ${res['market_cap_loss']:,.0f}")
+        st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
+        st.write(f"**Crisis Duration:** {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days")
+        st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
+                 f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
+
+    with impact_col2:
+        st.subheader("📈 Google Trends Insights")
+        st.write(f"**Search Term Used:** `{res.get('company_name', 'N/A')}`")
+        related_queries = res.get('related_queries')
+        if related_queries is not None and not related_queries.empty:
+            st.write("**Top 5 Related Search Queries:**")
+            st.dataframe(related_queries[['query']].head(5), use_container_width=True, hide_index=True)
+        else:
+            st.write("**No related queries found for this term.**")
 
     # --------- Plotting Section: Chart first ---------
 
