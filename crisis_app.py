@@ -478,7 +478,7 @@ if "analysis_result" in st.session_state:
         shared_xaxes=True,
         row_heights=[0.85, 0.15],
         vertical_spacing=0.01,
-        row_titles=["", "Response Actions Timeline"],
+        row_titles=["Stock Price & Google Trends", "Response Actions Timeline"],
         specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
     )
 
@@ -510,21 +510,43 @@ if "analysis_result" in st.session_state:
     fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
                   annotation_text="Crisis Minimum", row=1, col=1)
 
-    # Timeline event points - markers only, labels on hover (no text to avoid overlap)
+    # Timeline event points with alternating stems for better visualization
     if act_dates:
+        # Create alternating y-positions for markers to prevent overlap
+        y_positions = [1 if i % 2 == 0 else -1 for i in range(len(act_dates))]
+
+        # Add vertical stems from the center line to the markers
+        stem_x, stem_y = [], []
+        for date, y_pos in zip(act_dates, y_positions):
+            stem_x.extend([date, date, None])
+            stem_y.extend([0, y_pos, None])
+        
+        fig.add_trace(go.Scatter(
+            x=stem_x,
+            y=stem_y,
+            mode='lines',
+            line=dict(color='grey', width=1),
+            hoverinfo='none',
+            showlegend=False
+        ), row=2, col=1)
+
+        # Add markers at the end of the stems
         fig.add_trace(go.Scatter(
             x=act_dates,
-            y=np.ones(len(act_dates)),
+            y=y_positions,
             mode="markers",
-            marker=dict(symbol="circle", size=12, color="#045d1f"),
-            hovertext=[f"{label}: {date.strftime('%Y-%m-%d')}" for label, date in zip(act_labels, act_dates)],
+            marker=dict(symbol="circle", size=12, color="#045d1f", line=dict(width=1, color='white')),
+            hovertext=[f"<b>{label}</b><br>{date.strftime('%b %d, %Y')}" for label, date in zip(act_labels, act_dates)],
             hoverinfo='text',
             name="Response Actions",
             showlegend=False
         ), row=2, col=1)
 
+    # Add a central horizontal line for the timeline axis
+    fig.add_hline(y=0, line_width=2, line_color='grey', row=2, col=1)
+
     fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1,
-                     range=[0.5, 1.5], showgrid=False, zeroline=False, title=None)
+                     range=[-2, 2], showgrid=False, zeroline=False, title=None)
     fig.update_xaxes(title="Date", row=2, col=1, tickformat="%b %d, %Y")
     fig.update_yaxes(title_text="Price ($)", row=1, col=1, secondary_y=False)
     fig.update_yaxes(title_text="Google Trend (0-100)", row=1, col=1, secondary_y=True, showgrid=False)
