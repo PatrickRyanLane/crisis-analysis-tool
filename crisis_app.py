@@ -185,7 +185,7 @@ def get_news_with_sentiment(ticker):
         news_list = yf.Ticker(ticker).news
         processed_news = []
         if not news_list:
-            return []
+            return "no_news", []
 
         for item in news_list:
             # Only process items that have a valid title
@@ -197,9 +197,15 @@ def get_news_with_sentiment(ticker):
                 elif score <= -0.05: item['sentiment_class'] = 'Negative'
                 else: item['sentiment_class'] = 'Neutral'
                 processed_news.append(item)
-        return processed_news
-    except Exception:
-        return []
+        
+        if not processed_news:
+            return "no_news", []
+
+        return "ok", processed_news
+    except Exception as e:
+        error_message = f"Could not fetch news. This is often an intermittent issue with the `yfinance` library or network connectivity. Please try again later."
+        print(f"yfinance news error for {ticker}: {e}") # For server-side logging
+        return "error", error_message
 
 @st.cache_data
 def get_trends_data(keyword, start_date, end_date):
@@ -264,7 +270,7 @@ if should_run_analysis:
         end_date_obj = max(crisis_end.date(), mitigation_end_date) + timedelta(days=90)
 
         data, company_name, shares_outstanding = get_stock_data(ticker, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d"))
-        news = get_news_with_sentiment(ticker)
+        news_status, news_data = get_news_with_sentiment(ticker)
         if data is None:
             st.error("No data found for this ticker. Please check the symbol.")
             st.stop()
@@ -339,7 +345,8 @@ if should_run_analysis:
             related_queries=related_queries,
             company_name=company_name, # The simplified name
             trends_search_term=trends_search_term,
-            news=news
+            news_status=news_status,
+            news=news_data
         )
 
         # Store the parameters of this successful analysis
@@ -424,27 +431,28 @@ if "analysis_result" in st.session_state:
     # --- Recent News Expander ---
     st.markdown("---")
     with st.expander("📰 Recent News with Sentiment Analysis (to help identify crisis dates)"):
-        news_items = res.get('news', [])
-        if news_items:
-            sentiment_colors = {'Positive': 'green', 'Negative': 'red', 'Neutral': 'gray'}
-            for item in news_items:
-                title = item.get('title', 'No Title')
-                link = item.get('link')
-                publisher = item.get('publisher', 'Unknown Publisher')
-                publish_time_unix = item.get('providerPublishTime')
+        news_status = res.get('news_status')
+        news_items = res.get('news', []) # This will be a list or an error string
 
-                if publish_time_unix:
-                    publish_time = datetime.fromtimestamp(publish_time_unix).strftime('%Y-%m-%d %H:%M')
-                else:
-                    publish_time = "Date not available"
-
-                sentiment_class = item.get('sentiment_class', 'Neutral')
-                color = sentiment_colors.get(sentiment_class, 'gray')
-
-                # Make title a clickable link only if a link exists
-                display_title = f"**[{title}]({link})**" if link else f"**{title}**"
-                st.markdown(f"<span style='color:{color};'>{display_title}</span>", unsafe_allow_html=True)
-                st.caption(f"Published by {publisher} on {publish_time} | Sentiment: {sentiment_class}")
+        if news_status == 'ok':
+            if news_items:
+                sentiment_colors = {'Positive': 'green', 'Negative': 'red', 'Neutral': 'gray'}
+                for item in news_items:
+                    title = item.get('title', 'No Title')
+                    link = item.get('link')
+                    publisher = item.get('publisher', 'Unknown Publisher')
+                    publish_time_unix = item.get('providerPublishTime')
+                    if publish_time_unix:
+                        publish_time = datetime.fromtimestamp(publish_time_unix).strftime('%Y-%m-%d %H:%M')
+                    else:
+                        publish_time = "Date not available"
+                    sentiment_class = item.get('sentiment_class', 'Neutral')
+                    color = sentiment_colors.get(sentiment_class, 'gray')
+                    display_title = f"**{title}**" if link else f"**{title}**"
+                    st.markdown(f"<span style='color:{color};'>{display_title}</span>", unsafe_allow_html=True)
+                    st.caption(f"Published by {publisher} on {publish_time} | Sentiment: {sentiment_class}")
+        elif news_status == 'error':
+            st.warning(news_items) # Display the error message
         else:
             st.write("No recent news found for this ticker.")
 
