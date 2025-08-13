@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import pytz
+import re
+import re
 from pytrends.request import TrendReq
 import warnings
 
@@ -53,7 +55,33 @@ analyze_button_clicked = st.sidebar.button("Analyze Crisis Impact", type="primar
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
 
+def simplify_company_name(name):
+    """Simplifies a company's long name to a more common search term."""
+    if not isinstance(name, str):
+        return name
+    # Remove common corporate suffixes like Inc., Corp., Ltd., etc.
+    # This regex looks for an optional comma, whitespace, the suffix, and an optional period at the end of the string.
+    name = re.sub(r'[,]?\s*(Inc|Corporation|Corp|Company|Co|Ltd|LLC|PLC)\.?$', '', name, flags=re.IGNORECASE)
+    # Remove leading "The "
+    name = re.sub(r'^The\s+', '', name, flags=re.IGNORECASE)
+    # Trim any leading/trailing whitespace that might be left
+    return name.strip()
+
+
 # --- Helper functions ---
+def simplify_company_name(name):
+    """Simplifies a company's long name to a more common search term."""
+    if not isinstance(name, str):
+        return name
+    # Remove common corporate suffixes like Inc., Corp., Ltd., etc.
+    # This regex looks for an optional comma, whitespace, the suffix, and an optional period at the end of the string.
+    name = re.sub(r'[,]?\s*(Inc|Corporation|Corp|Company|Co|Ltd|LLC|PLC)\.?$', '', name, flags=re.IGNORECASE)
+    # Remove leading "The "
+    name = re.sub(r'^The\s+', '', name, flags=re.IGNORECASE)
+    # Trim any leading/trailing whitespace that might be left
+    return name.strip()
+
+
 def get_text_positions(dates, labels):
     """
     Generate alternating text positions to prevent overlap
@@ -103,7 +131,7 @@ def editable_actions_list():
             should_rerun = True
 
         if (new_date != action['date']) or (new_desc != action['description']):
-            st.session_state.response_actions[idx] = {"date": new_date, "description": new_desc}
+        company_name = stock_info.get('longName', ticker)
             should_rerun = True
 
     # Remove deleted items after loop to avoid index conflicts
@@ -117,7 +145,8 @@ def editable_actions_list():
 
 # --- Data Fetching Functions with Caching ---
 @st.cache_data
-def get_stock_data(ticker, start_date, end_date):
+        long_name = stock_info.get('longName', ticker)
+        company_name = simplify_company_name(long_name)
     """Fetches historical stock data and company info from Yahoo Finance and caches it."""
     data = yf.Ticker(ticker).history(start=start_date, end=end_date)
     if data.empty:
@@ -131,7 +160,8 @@ def get_stock_data(ticker, start_date, end_date):
     # Get company info
     try:
         stock_info = yf.Ticker(ticker).info
-        company_name = stock_info.get('longName', ticker)
+        long_name = stock_info.get('longName', ticker)
+        company_name = simplify_company_name(long_name)
         shares_outstanding = stock_info.get('sharesOutstanding', 1000000000)
     except Exception:
         company_name = ticker
