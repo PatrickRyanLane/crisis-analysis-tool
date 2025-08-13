@@ -7,7 +7,6 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import pytz
 import re
-import re
 from pytrends.request import TrendReq
 import warnings
 
@@ -27,6 +26,7 @@ st.sidebar.header("Crisis Analysis Parameters")
 
 ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
 st.sidebar.caption("The company name will be used for Google Trends search.")
+trends_keyword_override = st.sidebar.text_input("Custom Google Trends Keyword (optional)", help="Override the company name with your own search term.")
 
 TIMEZONE_OPTIONS = [
     "America/New_York",
@@ -54,19 +54,6 @@ analyze_button_clicked = st.sidebar.button("Analyze Crisis Impact", type="primar
 # Initialize response_actions in session state
 if "response_actions" not in st.session_state:
     st.session_state.response_actions = []
-
-def simplify_company_name(name):
-    """Simplifies a company's long name to a more common search term."""
-    if not isinstance(name, str):
-        return name
-    # Remove common corporate suffixes like Inc., Corp., Ltd., etc.
-    # This regex looks for an optional comma, whitespace, the suffix, and an optional period at the end of the string.
-    name = re.sub(r'[,]?\s*(Inc|Corporation|Corp|Company|Co|Ltd|LLC|PLC)\.?$', '', name, flags=re.IGNORECASE)
-    # Remove leading "The "
-    name = re.sub(r'^The\s+', '', name, flags=re.IGNORECASE)
-    # Trim any leading/trailing whitespace that might be left
-    return name.strip()
-
 
 # --- Helper functions ---
 def simplify_company_name(name):
@@ -130,8 +117,8 @@ def editable_actions_list():
             indices_to_delete.append(idx)
             should_rerun = True
 
-        if (new_date != action['date']) or (new_desc != action['description']):
-        company_name = stock_info.get('longName', ticker)
+        if new_date != action['date'] or new_desc != action['description']:
+            st.session_state.response_actions[idx] = {'date': new_date, 'description': new_desc}
             should_rerun = True
 
     # Remove deleted items after loop to avoid index conflicts
@@ -145,8 +132,7 @@ def editable_actions_list():
 
 # --- Data Fetching Functions with Caching ---
 @st.cache_data
-        long_name = stock_info.get('longName', ticker)
-        company_name = simplify_company_name(long_name)
+def get_stock_data(ticker, start_date, end_date):
     """Fetches historical stock data and company info from Yahoo Finance and caches it."""
     data = yf.Ticker(ticker).history(start=start_date, end=end_date)
     if data.empty:
@@ -256,8 +242,9 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
         market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
 
         # Fetch Google Trends data
+        trends_search_term = trends_keyword_override if trends_keyword_override else company_name
         trends_data, related_queries = get_trends_data(
-            company_name, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d")
+            trends_search_term, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d")
         )
 
         st.session_state.analysis_result = dict(
@@ -282,7 +269,7 @@ if "analysis_result" not in st.session_state or analyze_button_clicked:
             market_cap_loss=market_cap_loss,
             trends_data=trends_data,
             related_queries=related_queries,
-            company_name=company_name
+            company_name=company_name # The simplified name
         )
 
     except Exception as e:
@@ -298,7 +285,8 @@ if "analysis_result" in st.session_state:
 
     # Notify user if trends data failed to load
     if trends_data is None:
-        st.info(f"Could not retrieve Google Trends data for '{res.get('company_name', ticker)}'. The charts will not include the trends overlay.")
+        search_term = trends_keyword_override if trends_keyword_override else res.get('company_name', ticker)
+        st.info(f"Could not retrieve Google Trends data for '{search_term}'. The charts will not include the trends overlay.")
 
     col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -335,11 +323,12 @@ if "analysis_result" in st.session_state:
 
     with impact_col2:
         st.subheader("📈 Google Trends Insights")
-        st.write(f"**Search Term Used:** `{res.get('company_name', 'N/A')}`")
+        search_term = trends_keyword_override if trends_keyword_override else res.get('company_name', 'N/A')
+        st.write(f"**Search Term Used:** `{search_term}`")
         related_queries = res.get('related_queries')
         if related_queries is not None and not related_queries.empty:
             st.write("**Top 5 Related Search Queries:**")
-            st.dataframe(related_queries[['query']].head(5), use_container_width=True, hide_index=True)
+            st.dataframe(related_queries[['query', 'value']].head(5), use_container_width=True, hide_index=True)
         else:
             st.write("**No related queries found for this term.**")
 
@@ -377,7 +366,7 @@ if "analysis_result" in st.session_state:
 
     # Google Trends trace
     if trends_data is not None and not trends_data.empty:
-        keyword = res.get('company_name', 'Search Trend')
+        keyword = trends_data.columns[0] # Use the actual keyword from the returned data
         fig.add_trace(go.Scatter(
             x=trends_data.index, y=trends_data[keyword],
             mode='lines', name='Google Trend Score', line=dict(color='purple', width=1, dash='dot')
@@ -488,7 +477,7 @@ if "analysis_result" in st.session_state:
         ), secondary_y=False)
 
         if trends_data is not None and not trends_data.empty:
-            keyword = res.get('company_name', 'Search Trend')
+            keyword = trends_data.columns[0]
             vol_fig.add_trace(go.Scatter(
                 x=trends_data.index, y=trends_data[keyword],
                 mode='lines', name='Google Trend Score', line=dict(color='purple', width=1, dash='dot')
