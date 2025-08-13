@@ -386,6 +386,29 @@ if "analysis_result" in st.session_state:
         else:
             st.write("**No related queries found for this term.**")
 
+    # --- Recent News Expander ---
+    st.markdown("---")
+    with st.expander("📰 Recent News with Sentiment Analysis (to help identify crisis dates)"):
+        news_items = res.get('news', [])
+        if news_items:
+            sentiment_colors = {'Positive': 'green', 'Negative': 'red', 'Neutral': 'gray'}
+            for item in news_items:
+                title = item.get('title')
+                link = item.get('link')
+                publisher = item.get('publisher')
+                publish_time_unix = item.get('providerPublishTime')
+                if publish_time_unix:
+                    publish_time = datetime.fromtimestamp(publish_time_unix).strftime('%Y-%m-%d %H:%M')
+                else:
+                    publish_time = "Date not available"
+                sentiment_class = item.get('sentiment_class', 'Neutral')
+                color = sentiment_colors.get(sentiment_class, 'gray')
+
+                st.markdown(f"<span style='color:{color};'>**[{title}]({link})**</span>", unsafe_allow_html=True)
+                st.caption(f"Published by {publisher} on {publish_time} | Sentiment: {sentiment_class}")
+        else:
+            st.write("No recent news found for this ticker.")
+
     # --------- Plotting Section: Chart first ---------
 
     # Prepare response actions dates and labels
