@@ -271,6 +271,7 @@ if should_run_analysis:
             recovery_percentage = current_recovery_percentage = None
 
         # Calculate market cap change based on the average price difference
+        # This provides a more stable measure of impact than using the single lowest point.
         market_cap_change = (crisis_avg - pre_crisis_avg) * shares_outstanding
 
         # Fetch Google Trends data
