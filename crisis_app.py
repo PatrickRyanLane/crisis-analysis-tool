@@ -37,8 +37,9 @@ TIMEZONE_OPTIONS = [
 user_tz_str = st.sidebar.selectbox("Select Timezone for Input Dates", TIMEZONE_OPTIONS, index=0)
 user_timezone = pytz.timezone(user_tz_str)
 
-crisis_start_date = st.sidebar.date_input("Crisis Start Date", value=datetime(2022, 1, 1))
-crisis_end_date = st.sidebar.date_input("Crisis End Date", value=datetime(2022, 6, 30))
+today = datetime.today()
+crisis_start_date = st.sidebar.date_input("Crisis Start Date", value=today - timedelta(days=90))
+crisis_end_date = st.sidebar.date_input("Crisis End Date", value=today)
 
 mitigation_start_date = st.sidebar.date_input("Mitigation Start Date", value=crisis_end_date)
 mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_end_date + timedelta(days=90))
