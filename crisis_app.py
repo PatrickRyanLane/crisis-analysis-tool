@@ -8,8 +8,18 @@ from datetime import datetime, timedelta
 import pytz
 import re
 from pytrends.request import TrendReq
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+import nltk
 import warnings
 
+# --- One-time setup for NLTK VADER ---
+@st.cache_resource
+def get_sentiment_analyzer():
+    """Downloads VADER lexicon if not present and returns an analyzer instance."""
+    nltk.download('vader_lexicon', quiet=True)
+    return SentimentIntensityAnalyzer()
+
+sia = get_sentiment_analyzer()
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
@@ -146,7 +156,7 @@ def editable_actions_list():
 # --- Data Fetching Functions with Caching ---
 @st.cache_data
 def get_stock_data(ticker, start_date, end_date):
-    """Fetches historical stock data and company info from Yahoo Finance and caches it."""
+    """Fetches historical stock data and company info from Yahoo Finance."""
     data = yf.Ticker(ticker).history(start=start_date, end=end_date)
     if data.empty:
         return None, None, None
@@ -167,6 +177,22 @@ def get_stock_data(ticker, start_date, end_date):
         shares_outstanding = 1000000000
 
     return data, company_name, shares_outstanding
+
+@st.cache_data(ttl=3600) # Cache news for 1 hour
+def get_news_with_sentiment(ticker):
+    """Fetches recent news, performs sentiment analysis, and caches the result."""
+    try:
+        news = yf.Ticker(ticker).news
+        for item in news:
+            title = item.get('title', '')
+            score = sia.polarity_scores(title)['compound']
+            item['sentiment_score'] = score
+            if score >= 0.05: item['sentiment_class'] = 'Positive'
+            elif score <= -0.05: item['sentiment_class'] = 'Negative'
+            else: item['sentiment_class'] = 'Neutral'
+        return news
+    except Exception:
+        return []
 
 @st.cache_data
 def get_trends_data(keyword, start_date, end_date):
@@ -231,6 +257,7 @@ if should_run_analysis:
         end_date_obj = max(crisis_end.date(), mitigation_end_date) + timedelta(days=90)
 
         data, company_name, shares_outstanding = get_stock_data(ticker, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d"))
+        news = get_news_with_sentiment(ticker)
         if data is None:
             st.error("No data found for this ticker. Please check the symbol.")
             st.stop()
@@ -304,7 +331,8 @@ if should_run_analysis:
             trends_data=trends_data,
             related_queries=related_queries,
             company_name=company_name, # The simplified name
-            trends_search_term=trends_search_term
+            trends_search_term=trends_search_term,
+            news=news
         )
 
         # Store the parameters of this successful analysis
