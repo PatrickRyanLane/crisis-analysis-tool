@@ -182,15 +182,22 @@ def get_stock_data(ticker, start_date, end_date):
 def get_news_with_sentiment(ticker):
     """Fetches recent news, performs sentiment analysis, and caches the result."""
     try:
-        news = yf.Ticker(ticker).news
-        for item in news:
-            title = item.get('title', '')
-            score = sia.polarity_scores(title)['compound']
-            item['sentiment_score'] = score
-            if score >= 0.05: item['sentiment_class'] = 'Positive'
-            elif score <= -0.05: item['sentiment_class'] = 'Negative'
-            else: item['sentiment_class'] = 'Neutral'
-        return news
+        news_list = yf.Ticker(ticker).news
+        processed_news = []
+        if not news_list:
+            return []
+
+        for item in news_list:
+            # Only process items that have a valid title
+            if item and item.get('title'):
+                title = item['title']
+                score = sia.polarity_scores(title)['compound']
+                item['sentiment_score'] = score
+                if score >= 0.05: item['sentiment_class'] = 'Positive'
+                elif score <= -0.05: item['sentiment_class'] = 'Negative'
+                else: item['sentiment_class'] = 'Neutral'
+                processed_news.append(item)
+        return processed_news
     except Exception:
         return []
 
@@ -421,18 +428,22 @@ if "analysis_result" in st.session_state:
         if news_items:
             sentiment_colors = {'Positive': 'green', 'Negative': 'red', 'Neutral': 'gray'}
             for item in news_items:
-                title = item.get('title')
+                title = item.get('title', 'No Title')
                 link = item.get('link')
-                publisher = item.get('publisher')
+                publisher = item.get('publisher', 'Unknown Publisher')
                 publish_time_unix = item.get('providerPublishTime')
+
                 if publish_time_unix:
                     publish_time = datetime.fromtimestamp(publish_time_unix).strftime('%Y-%m-%d %H:%M')
                 else:
                     publish_time = "Date not available"
+
                 sentiment_class = item.get('sentiment_class', 'Neutral')
                 color = sentiment_colors.get(sentiment_class, 'gray')
 
-                st.markdown(f"<span style='color:{color};'>**[{title}]({link})**</span>", unsafe_allow_html=True)
+                # Make title a clickable link only if a link exists
+                display_title = f"**[{title}]({link})**" if link else f"**{title}**"
+                st.markdown(f"<span style='color:{color};'>{display_title}</span>", unsafe_allow_html=True)
                 st.caption(f"Published by {publisher} on {publish_time} | Sentiment: {sentiment_class}")
         else:
             st.write("No recent news found for this ticker.")
