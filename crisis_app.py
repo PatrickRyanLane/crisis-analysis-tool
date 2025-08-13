@@ -360,9 +360,8 @@ if "analysis_result" in st.session_state:
         else:
             label = "Est. Market Cap Gain:"
             value_str = f"${mc_change:,.0f}"
-        help="Market Cap Change = (Average Crisis Price - Average Pre-Crisis Price) * Shares Outstanding"
 
-        st.write(f"**{label}** {value_str}")
+        st.markdown(f"**{label}** {value_str}", help="Market Cap Change = (Average Crisis Price - Average Pre-Crisis Price) * Shares Outstanding")
         st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
         st.write(f"**Crisis Duration:** {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days")
         st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
