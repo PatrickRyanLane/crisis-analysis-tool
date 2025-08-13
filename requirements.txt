@@ -5,4 +5,3 @@ numpy
 plotly
 pytrends
 nltk
-requests
