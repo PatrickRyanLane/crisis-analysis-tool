@@ -69,6 +69,18 @@ def simplify_company_name(name):
     # Trim any leading/trailing whitespace that might be left
     return name.strip()
 
+def add_action_callback():
+    """Callback to add a new response action from the text input."""
+    desc = st.session_state.get("new_action_desc_input", "").strip()
+    if desc:
+        st.session_state.response_actions.append({
+            "date": st.session_state.new_action_date_input,
+            "description": desc
+        })
+        # Clear the input widget's state for the next entry
+        st.session_state.new_action_desc_input = ""
+        st.success("New response action added.")
+
 
 def get_text_positions(dates, labels):
     """
@@ -445,25 +457,23 @@ if "analysis_result" in st.session_state:
     # --------- Editable Response Actions List BELOW the chart ---------
     editable_actions_list()
 
-    # --------- Add New Action Form BELOW the editable list ---------
-    with st.form("add_action_form", clear_on_submit=True):
-        new_action_date = st.date_input(
-            "Add New Action Date",
+    # --------- Add New Action Section BELOW the editable list ---------
+    st.markdown("---")
+    st.subheader("Add New Action")
+    add_cols = st.columns([1, 3])
+    with add_cols[0]:
+        st.date_input(
+            "Action Date",
             value=mitigation_start_date if mitigation_start_date else datetime.today().date(),
-            key="new_action_date"
+            key="new_action_date_input"
         )
-        new_action_desc = st.text_input("Add New Action Description", key="new_action_desc")
-        submitted = st.form_submit_button("Save New Action")
-
-        if submitted:
-            if new_action_desc.strip():
-                st.session_state.response_actions.append(
-                    {"date": new_action_date, "description": new_action_desc.strip()}
-                )
-                st.success("New response action added.")
-                st.rerun()
-            else:
-                st.warning("Please enter a description.")
+    with add_cols[1]:
+        st.text_input(
+            "Action Description (press Enter to add)",
+            key="new_action_desc_input",
+            on_change=add_action_callback,
+            placeholder="e.g., 'CEO issues public apology'"
+        )
 
     # -------- Additional Analysis Tables and Summaries ---------
     st.subheader("📈 Timeline Analysis")
