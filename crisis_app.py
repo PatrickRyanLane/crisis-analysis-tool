@@ -270,7 +270,8 @@ if should_run_analysis:
             post_crisis_avg = current_postcrisis_price = np.nan
             recovery_percentage = current_recovery_percentage = None
 
-        market_cap_loss = abs(max_decline) / 100 * pre_crisis_avg * shares_outstanding
+        # Calculate market cap change based on the average price difference
+        market_cap_change = (crisis_avg - pre_crisis_avg) * shares_outstanding
 
         # Fetch Google Trends data
         trends_keyword_override = st.session_state.get("trends_keyword_override", "")
@@ -298,7 +299,7 @@ if should_run_analysis:
             recovery_percentage=recovery_percentage,
             current_recovery_percentage=current_recovery_percentage,
             shares_outstanding=shares_outstanding,
-            market_cap_loss=market_cap_loss,
+            market_cap_change=market_cap_change,
             trends_data=trends_data,
             related_queries=related_queries,
             company_name=company_name, # The simplified name
@@ -351,7 +352,14 @@ if "analysis_result" in st.session_state:
 
     with impact_col1:
         st.subheader("💰 Economic Impact Analysis")
-        st.write(f"**Estimated Market Cap Loss:** ${res['market_cap_loss']:,.0f}")
+        mc_change = res.get('market_cap_change', 0)
+        if mc_change < 0:
+            label = "Est. Market Cap Loss:"
+            value_str = f"${abs(mc_change):,.0f}"
+        else:
+            label = "Est. Market Cap Gain:"
+            value_str = f"${mc_change:,.0f}"
+        st.write(f"**{label}** {value_str}")
         st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
         st.write(f"**Crisis Duration:** {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days")
         st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
@@ -370,7 +378,9 @@ if "analysis_result" in st.session_state:
         related_queries = res.get('related_queries')
         if related_queries is not None and not related_queries.empty:
             st.write("**Top 5 Related Search Queries:**")
-            st.dataframe(related_queries[['query', 'value']].head(5), use_container_width=True, hide_index=True)
+            display_df = related_queries[['query', 'value']].head(5).copy()
+            display_df.rename(columns={'value': 'Relative Popularity (0-100)'}, inplace=True)
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
         else:
             st.write("**No related queries found for this term.**")
 
