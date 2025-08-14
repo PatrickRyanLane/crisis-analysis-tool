@@ -188,6 +188,36 @@ def get_stock_data(ticker, start_date, end_date):
 
     return data, company_name, shares_outstanding
 
+@st.cache_data(ttl=3600) # Cache for 1 hour
+def get_current_iv(ticker):
+    """
+    Calculates the current 30-day implied volatility for a stock.
+    It finds the options chain closest to 30 days out, identifies the at-the-money
+    strike, and averages the IV of the corresponding call and put.
+    """
+    try:
+        ticker_obj = yf.Ticker(ticker)
+        # Get the current stock price
+        current_price = ticker_obj.history(period='1d')['Close'].iloc[-1]
+        
+        # Find the options expiration date closest to 30 days from now
+        expirations = ticker_obj.options
+        if not expirations: return None
+        
+        today = datetime.now().date()
+        time_diffs = [abs((datetime.strptime(exp, '%Y-%m-%d').date() - today).days - 30) for exp in expirations]
+        closest_exp = expirations[np.argmin(time_diffs)]
+        
+        # Get the options chain for that date
+        opt_chain = ticker_obj.option_chain(closest_exp)
+        # Find the at-the-money strike price
+        atm_strike = min(opt_chain.calls['strike'], key=lambda x: abs(x - current_price))
+        iv_call = opt_chain.calls[opt_chain.calls['strike'] == atm_strike]['impliedVolatility'].iloc[0]
+        iv_put = opt_chain.puts[opt_chain.puts['strike'] == atm_strike]['impliedVolatility'].iloc[0]
+        return (iv_call + iv_put) / 2 * 100 # Return as a percentage
+    except Exception:
+        return None
+
 @st.cache_data(ttl=3600) # Cache news for 1 hour
 def get_news_with_sentiment(search_query):
     """Fetches recent news, performs sentiment analysis, and caches the result."""
@@ -282,6 +312,7 @@ if should_run_analysis:
 
         data, company_name, shares_outstanding = get_stock_data(ticker, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d"))
         news_status, news_data = get_news_with_sentiment(company_name)
+        current_iv = get_current_iv(ticker)
         if data is None:
             st.error("No data found for this ticker. Please check the symbol.")
             st.stop()
@@ -359,6 +390,7 @@ if should_run_analysis:
             related_queries=related_queries,
             company_name=company_name, # The simplified name
             trends_search_term=trends_search_term,
+            current_iv=current_iv,
             analyze_mitigation=analyze_mitigation,
             mitigation_start_date_val=mitigation_start_date,
             mitigation_end_date_val=mitigation_end_date,
@@ -390,7 +422,7 @@ if "analysis_result" in st.session_state:
         search_term_used = res.get('trends_search_term', ticker)
         st.info(f"Could not retrieve Google Trends data for '{search_term_used}'. The charts will not include the trends overlay.")
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
         st.metric(
@@ -433,7 +465,17 @@ if "analysis_result" in st.session_state:
             st.caption(f"Difference from crisis min: "
                        f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
         else:
-            st.metric("Post-Crisis Recovery", "Not enough data")
+            st.metric("Recovery to Current", "Not enough data")
+    with col6:
+        current_iv = res.get('current_iv')
+        if current_iv is not None:
+            st.metric(
+                "Current 30-Day IV",
+                f"{current_iv:.2f}%",
+                help="The average Implied Volatility for at-the-money options expiring in ~30 days. Higher values suggest the market expects more price volatility."
+            )
+        else:
+            st.metric("Current 30-Day IV", "N/A")
 
     impact_col1, impact_col2 = st.columns(2)
 
@@ -444,10 +486,10 @@ if "analysis_result" in st.session_state:
         if mc_change is not None:
             if mc_change < 0:
                 label = "Est. Market Cap Loss:"
-                value_str = f"${abs(mc_change):,.0f}"
+                value_str = f"<span style='color:red;'>-${abs(mc_change):,.0f}</span>"
             else:
                 label = "Est. Market Cap Gain:"
-                value_str = f"${mc_change:,.0f}"
+                value_str = f"<span style='color:green;'>+${mc_change:,.0f}</span>"
             calc_string = f"(\${res['crisis_avg']:.2f} - \${res['pre_crisis_avg']:.2f}) * {res['shares_outstanding']:,} shares"
             calc_caption = f"Calculation: {calc_string}"
         else:
@@ -455,7 +497,7 @@ if "analysis_result" in st.session_state:
             value_str = "`Data not available`"
             calc_caption = "Could not retrieve the number of outstanding shares for this ticker."
 
-        st.markdown(f"**{label}** {value_str}", help="Market Cap Change = (Average Crisis Price - Average Pre-Crisis Price) * Shares Outstanding")
+        st.markdown(f"**{label}** {value_str}", help="Market Cap Change = (Average Crisis Price - Average Pre-Crisis Price) * Shares Outstanding", unsafe_allow_html=True)
         st.caption(calc_caption)
         st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
         st.write(f"**Crisis Duration:** {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days")
@@ -670,13 +712,13 @@ if "analysis_result" in st.session_state:
             'Mitigation Period',
             'Post-Crisis (90 days)'
         ],
-        'Average Price': [
+        'Avg Price': [
             res['pre_crisis_avg'],
             res['crisis_avg'],
             res['mitigation_avg'],
             post_crisis_data['Close'].mean() if not post_crisis_data.empty else np.nan
         ],
-        'Volatility': [
+        'Realized Volatility (Std Dev)': [
             data[data.index < res['crisis_start_utc']]['Close'].std(),
             data[(data.index >= res['crisis_start_utc']) & (data.index <= res['crisis_end_utc'])]['Close'].std(),
             res['mitigation_vol'],
@@ -685,7 +727,10 @@ if "analysis_result" in st.session_state:
     }).dropna()
 
     st.dataframe(timeline_data.round(2), use_container_width=True)
-    st.caption("Volatility is measured by the standard deviation of the closing price for each period.")
+    st.caption(
+        "**Realized Volatility** is the standard deviation of the closing price for each period, measuring how much the price actually fluctuated. "
+        "This is different from **Implied Volatility (IV)**, which is a forward-looking measure of expected future volatility."
+    )
 
     if 'Volume' in data.columns:
         st.subheader("📊 Trading Volume Analysis")
