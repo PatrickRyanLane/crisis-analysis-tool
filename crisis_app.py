@@ -343,6 +343,10 @@ if should_run_analysis:
         max_decline = ((crisis_min - pre_crisis_avg) / pre_crisis_avg) * 100
         avg_decline = ((crisis_avg - pre_crisis_avg) / pre_crisis_avg) * 100
 
+        # Calculate annualized realized volatility for the crisis period for comparison with IV
+        crisis_log_returns = np.log(crisis_data['Close'] / crisis_data['Close'].shift(1))
+        crisis_realized_vol = crisis_log_returns.std() * np.sqrt(252) * 100
+
         if not post_crisis_data.empty:
             post_crisis_avg = post_crisis_data['Close'].mean()
             recovery_percentage = ((post_crisis_avg - crisis_min) / crisis_min) * 100
@@ -379,6 +383,7 @@ if should_run_analysis:
             mitigation_vol=mitigation_vol,
             max_decline=max_decline,
             avg_decline=avg_decline,
+            crisis_realized_vol=crisis_realized_vol,
             post_crisis_data=post_crisis_data,
             post_crisis_avg=post_crisis_avg,
             current_postcrisis_price=current_postcrisis_price,
@@ -422,7 +427,7 @@ if "analysis_result" in st.session_state:
         search_term_used = res.get('trends_search_term', ticker)
         st.info(f"Could not retrieve Google Trends data for '{search_term_used}'. The charts will not include the trends overlay.")
 
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
         st.metric(
@@ -466,16 +471,6 @@ if "analysis_result" in st.session_state:
                        f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
         else:
             st.metric("Recovery to Current", "Not enough data")
-    with col6:
-        current_iv = res.get('current_iv')
-        if current_iv is not None:
-            st.metric(
-                "Current 30-Day IV",
-                f"{current_iv:.2f}%",
-                help="The average Implied Volatility for at-the-money options expiring in ~30 days. Higher values suggest the market expects more price volatility."
-            )
-        else:
-            st.metric("Current 30-Day IV", "N/A")
 
     impact_col1, impact_col2 = st.columns(2)
 
@@ -718,7 +713,7 @@ if "analysis_result" in st.session_state:
             res['mitigation_avg'],
             post_crisis_data['Close'].mean() if not post_crisis_data.empty else np.nan
         ],
-        'Realized Volatility (Std Dev)': [
+        'Price Volatility (Std Dev)': [
             data[data.index < res['crisis_start_utc']]['Close'].std(),
             data[(data.index >= res['crisis_start_utc']) & (data.index <= res['crisis_end_utc'])]['Close'].std(),
             res['mitigation_vol'],
@@ -728,9 +723,38 @@ if "analysis_result" in st.session_state:
 
     st.dataframe(timeline_data.round(2), use_container_width=True)
     st.caption(
-        "**Realized Volatility** is the standard deviation of the closing price for each period, measuring how much the price actually fluctuated. "
+        "**Price Volatility** is the standard deviation of the closing price for each period, measuring how much the price actually fluctuated. "
         "This is different from **Implied Volatility (IV)**, which is a forward-looking measure of expected future volatility."
     )
+
+    # --- Volatility Analysis Section ---
+    st.subheader("⚡ Volatility Analysis")
+    iv_col1, iv_col2 = st.columns(2)
+
+    with iv_col1:
+        current_iv = res.get('current_iv')
+        if current_iv is not None:
+            st.metric(
+                "Current 30-Day IV",
+                f"{current_iv:.2f}%",
+                help="The average Implied Volatility for at-the-money options expiring in ~30 days. Higher values suggest the market expects more price volatility."
+            )
+        else:
+            st.metric("Current 30-Day IV", "N/A")
+
+    with iv_col2:
+        current_iv = res.get('current_iv')
+        crisis_realized_vol = res.get('crisis_realized_vol')
+        if current_iv is not None and crisis_realized_vol is not None:
+            iv_diff = current_iv - crisis_realized_vol
+            st.metric(
+                "IV vs. Crisis Realized Vol",
+                f"{iv_diff:+.2f} pts",
+                help="The difference between current 30-day IV and the annualized realized volatility during the crisis. A positive value suggests the market expects more volatility now than what actually occurred during the crisis."
+            )
+            st.caption(f"Crisis Realized Vol: {crisis_realized_vol:.2f}%")
+        else:
+            st.metric("IV vs. Crisis Realized Vol", "N/A")
 
     if 'Volume' in data.columns:
         st.subheader("📊 Trading Volume Analysis")
