@@ -52,11 +52,16 @@ today = datetime.today()
 crisis_start_date = st.sidebar.date_input("Crisis Start Date", value=today - timedelta(days=90))
 crisis_end_date = st.sidebar.date_input("Crisis End Date", value=today)
 
-mitigation_start_date = st.sidebar.date_input("Mitigation Start Date", value=crisis_end_date)
-mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_end_date + timedelta(days=90))
+analyze_mitigation = st.sidebar.toggle("Analyze Mitigation Period", value=True, help="Include a specific period for mitigation actions in the analysis and charts.")
 
-if mitigation_end_date < mitigation_start_date:
-    st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
+if analyze_mitigation:
+    mitigation_start_date = st.sidebar.date_input("Mitigation Start Date", value=crisis_end_date)
+    mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_end_date + timedelta(days=90))
+    if mitigation_end_date < mitigation_start_date:
+        st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
+else:
+    mitigation_start_date = crisis_end_date
+    mitigation_end_date = crisis_end_date
 
 # Initialize response_actions in session state
 if "response_actions" not in st.session_state:
@@ -249,6 +254,7 @@ current_params = {
     "ticker": ticker,
     "crisis_start_date": crisis_start_date,
     "crisis_end_date": crisis_end_date,
+    "analyze_mitigation": analyze_mitigation,
     "mitigation_start_date": mitigation_start_date,
     "mitigation_end_date": mitigation_end_date,
     "user_tz_str": user_tz_str,
@@ -345,6 +351,9 @@ if should_run_analysis:
             related_queries=related_queries,
             company_name=company_name, # The simplified name
             trends_search_term=trends_search_term,
+            analyze_mitigation=analyze_mitigation,
+            mitigation_start_date_val=mitigation_start_date,
+            mitigation_end_date_val=mitigation_end_date,
             news_status=news_status,
             news=news_data
         )
@@ -411,8 +420,9 @@ if "analysis_result" in st.session_state:
         st.markdown(f"**{label}** {value_str}", help="Market Cap Change = (Average Crisis Price - Average Pre-Crisis Price) * Shares Outstanding")
         st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
         st.write(f"**Crisis Duration:** {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days")
-        st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
-                 f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
+        if res.get('analyze_mitigation'):
+            st.write(f"**Mitigation Period:** {res['mitigation_start_date_val']} to {res['mitigation_end_date_val']} "
+                     f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
 
     with impact_col2:
         st.subheader("📈 Google Trends Insights")
@@ -511,9 +521,10 @@ if "analysis_result" in st.session_state:
     fig.add_vrect(x0=res['crisis_start_utc'].replace(tzinfo=None), x1=res['crisis_end_utc'].replace(tzinfo=None),
                   fillcolor="red", opacity=0.2, layer="below", line_width=0,
                   annotation_text="Crisis Period", annotation_position="top left", row=1, col=1)
-    fig.add_vrect(x0=res['mitigation_start_utc'].replace(tzinfo=None), x1=res['mitigation_end_utc'].replace(tzinfo=None),
-                  fillcolor="green", opacity=0.13, layer="below", line_width=0,
-                  annotation_text="Mitigation Period", annotation_position="top right", row=1, col=1)
+    if res.get('analyze_mitigation'):
+        fig.add_vrect(x0=res['mitigation_start_utc'].replace(tzinfo=None), x1=res['mitigation_end_utc'].replace(tzinfo=None),
+                      fillcolor="green", opacity=0.13, layer="below", line_width=0,
+                      annotation_text="Mitigation Period", annotation_position="top right", row=1, col=1)
 
     # Lines for averages and min
     fig.add_hline(y=res['pre_crisis_avg'], line_dash="dash", line_color="green",
@@ -655,10 +666,11 @@ if "analysis_result" in st.session_state:
             x0=res['crisis_start_utc'], x1=res['crisis_end_utc'],
             fillcolor="red", opacity=0.18, line_width=0
         )
-        vol_fig.add_vrect(
-            x0=res['mitigation_start_utc'], x1=res['mitigation_end_utc'],
-            fillcolor="green", opacity=0.12, line_width=0
-        )
+        if res.get('analyze_mitigation'):
+            vol_fig.add_vrect(
+                x0=res['mitigation_start_utc'], x1=res['mitigation_end_utc'],
+                fillcolor="green", opacity=0.12, line_width=0
+            )
 
         vol_fig.update_layout(
             title_text=f"{ticker} Trading Volume & Google Trends",
