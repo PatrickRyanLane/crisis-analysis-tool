@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import pytz
 import re
+import requests
 from pytrends.request import TrendReq
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import nltk
@@ -18,6 +19,14 @@ def get_sentiment_analyzer():
     """Downloads VADER lexicon if not present and returns an analyzer instance."""
     nltk.download('vader_lexicon', quiet=True)
     return SentimentIntensityAnalyzer()
+
+@st.cache_resource
+def get_yfinance_session():
+    """Creates a requests session with a user-agent to make yfinance more robust."""
+    session = requests.Session()
+    # Using a common browser user-agent can help avoid being blocked
+    session.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    return session
 
 sia = get_sentiment_analyzer()
 warnings.filterwarnings('ignore')
@@ -125,7 +134,13 @@ def get_text_positions(dates, labels):
 def editable_actions_list():
     st.subheader("🗓️ Editable Response Actions")
     indices_to_delete = []
-    should_rerun = False  # flag to trigger rerun once
+    should_rerun = False
+
+    # Header for the editable list
+    header_cols = st.columns([3, 6, 1])
+    header_cols[0].caption("Action Date")
+    header_cols[1].caption("Description")
+    header_cols[2].caption("Delete")
 
     for idx, action in enumerate(st.session_state.response_actions):
         cols = st.columns([3, 6, 1])
@@ -133,27 +148,26 @@ def editable_actions_list():
         new_date = cols[0].date_input(
             label=f"Date {idx + 1}",
             value=action['date'],
-            key=f"date_{idx}"
+            key=f"date_{idx}",
+            label_visibility="collapsed"
         )
         new_desc = cols[1].text_input(
             label=f"Description {idx + 1}",
             value=action['description'],
             max_chars=200,
-            key=f"desc_{idx}"
+            key=f"desc_{idx}",
+            label_visibility="collapsed"
         )
         if cols[2].button("❌", key=f"del_{idx}"):
             indices_to_delete.append(idx)
             should_rerun = True
 
-        if new_date != action['date'] or new_desc != action['description']:
-            st.session_state.response_actions[idx] = {'date': new_date, 'description': new_desc}
-            should_rerun = True
-
-    # Remove deleted items after loop to avoid index conflicts
+    # Process deletions before rerunning
     if indices_to_delete:
         for i in sorted(indices_to_delete, reverse=True):
             st.session_state.response_actions.pop(i)
 
+    # Remove deleted items after loop to avoid index conflicts
     if should_rerun:
         st.rerun()
 
@@ -162,18 +176,19 @@ def editable_actions_list():
 @st.cache_data
 def get_stock_data(ticker, start_date, end_date):
     """Fetches historical stock data and company info from Yahoo Finance."""
-    data = yf.Ticker(ticker).history(start=start_date, end=end_date)
+    session = get_yfinance_session()
+    ticker_obj = yf.Ticker(ticker, session=session)
+    data = ticker_obj.history(start=start_date, end=end_date)
     if data.empty:
         return None, None, None
-    # Ensure timezone is set to UTC for consistency
+
     if data.index.tz is None:
         data.index = data.index.tz_localize('UTC')
     else:
         data.index = data.index.tz_convert('UTC')
 
-    # Get company info
     try:
-        stock_info = yf.Ticker(ticker).info
+        stock_info = ticker_obj.info
         long_name = stock_info.get('longName', ticker)
         company_name = simplify_company_name(long_name)
         shares_outstanding = stock_info.get('sharesOutstanding', 1000000000)
@@ -187,7 +202,8 @@ def get_stock_data(ticker, start_date, end_date):
 def get_news_with_sentiment(ticker):
     """Fetches recent news, performs sentiment analysis, and caches the result."""
     try:
-        news_list = yf.Ticker(ticker).news
+        session = get_yfinance_session()
+        news_list = yf.Search(ticker, session=session).news
         processed_news = []
         if not news_list:
             return "no_news", []
@@ -530,7 +546,7 @@ if "analysis_result" in st.session_state:
     fig.add_hline(y=res['pre_crisis_avg'], line_dash="dash", line_color="green",
                   annotation_text="Pre-Crisis Average", row=1, col=1)
     fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
-                  annotation_text="Crisis Minimum", row=1, col=1)
+                  annotation_text="Crisis Low Price", row=1, col=1)
 
     # Add a dummy trace to ensure the timeline subplot is always drawn,
     # making the central line and x-axis visible even with no actions.
