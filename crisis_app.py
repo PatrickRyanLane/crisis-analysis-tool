@@ -426,7 +426,7 @@ if "analysis_result" in st.session_state:
             else:
                 label = "Est. Market Cap Gain:"
                 value_str = f"${mc_change:,.0f}"
-            calc_string = f"(${res['crisis_avg']:.2f} - ${res['pre_crisis_avg']:.2f}) * {res['shares_outstanding']:,} shares"
+            calc_string = f"(\${res['crisis_avg']:.2f} - \${res['pre_crisis_avg']:.2f}) * {res['shares_outstanding']:,} shares"
             calc_caption = f"Calculation: {calc_string}"
         else:
             label = "Est. Market Cap Change:"
