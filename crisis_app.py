@@ -393,20 +393,42 @@ if "analysis_result" in st.session_state:
     col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
-        st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
+        st.metric(
+            "Pre-Crisis Avg", 
+            f"${res['pre_crisis_avg']:.2f}",
+            help="The average closing stock price for the 90 days leading up to the crisis start date."
+        )
     with col2:
-        st.metric("Crisis Minimum", f"${res['crisis_min']:.2f}", delta=f"{res['max_decline']:.1f}%")
+        st.metric(
+            "Crisis Minimum", 
+            f"${res['crisis_min']:.2f}", 
+            delta=f"{res['max_decline']:.1f}%",
+            help="The lowest closing price during the crisis period. The delta shows the percentage change from the pre-crisis average. Formula: `((Crisis Minimum - Pre-Crisis Avg) / Pre-Crisis Avg) * 100`"
+        )
     with col3:
-        st.metric("Crisis Avg", f"${res['crisis_avg']:.2f}", delta=f"{res['avg_decline']:.1f}%")
+        st.metric(
+            "Crisis Avg", 
+            f"${res['crisis_avg']:.2f}", 
+            delta=f"{res['avg_decline']:.1f}%",
+            help="The average closing price during the crisis period. The delta shows the percentage change from the pre-crisis average. Formula: `((Crisis Avg - Pre-Crisis Avg) / Pre-Crisis Avg) * 100`"
+        )
     with col4:
         if not res['post_crisis_data'].empty:
-            st.metric("Post-Crisis Recovery Avg", f"{res['recovery_percentage']:.1f}%")
+            st.metric(
+                "Post-Crisis Recovery Avg", 
+                f"{res['recovery_percentage']:.1f}%",
+                help="The percentage gain from the crisis low price to the average price in the post-crisis period. Formula: `((Avg Post-Crisis Price - Crisis Low) / Crisis Low) * 100`"
+            )
             st.caption(f"Avg post-crisis close: ${res['post_crisis_avg']:.2f}")
         else:
             st.metric("Post-Crisis Recovery", "Not enough data")
     with col5:
         if not res['post_crisis_data'].empty:
-            st.metric("Recovery to Current Price", f"{res['current_recovery_percentage']:.1f}%")
+            st.metric(
+                "Recovery to Current Price", 
+                f"{res['current_recovery_percentage']:.1f}%",
+                help="The percentage gain from the crisis low price to the most recent closing price. Formula: `((Current Price - Crisis Low) / Crisis Low) * 100`"
+            )
             st.caption(f"Current price: ${res['current_postcrisis_price']:.2f}")
             st.caption(f"Difference from crisis min: "
                        f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
@@ -657,6 +679,7 @@ if "analysis_result" in st.session_state:
     }).dropna()
 
     st.dataframe(timeline_data.round(2), use_container_width=True)
+    st.caption("Volatility is measured by the standard deviation of the closing price for each period.")
 
     if 'Volume' in data.columns:
         st.subheader("📊 Trading Volume Analysis")
