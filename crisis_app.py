@@ -189,10 +189,10 @@ def get_stock_data(ticker, start_date, end_date):
     return data, company_name, shares_outstanding
 
 @st.cache_data(ttl=3600) # Cache news for 1 hour
-def get_news_with_sentiment(ticker):
+def get_news_with_sentiment(search_query):
     """Fetches recent news, performs sentiment analysis, and caches the result."""
     try:
-        news_list = yf.Search(ticker).news
+        news_list = yf.Search(search_query).news
         processed_news = []
         if not news_list:
             return "no_news", []
@@ -214,7 +214,7 @@ def get_news_with_sentiment(ticker):
         return "ok", processed_news
     except Exception as e:
         error_message = f"Could not fetch news. This is often an intermittent issue with the `yfinance` library or network connectivity. Please try again later."
-        print(f"yfinance news error for {ticker}: {e}") # For server-side logging
+        print(f"yfinance news error for '{search_query}': {e}") # For server-side logging
         return "error", error_message
 
 @st.cache_data
@@ -281,7 +281,7 @@ if should_run_analysis:
         end_date_obj = max(crisis_end.date(), mitigation_end_date) + timedelta(days=90)
 
         data, company_name, shares_outstanding = get_stock_data(ticker, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d"))
-        news_status, news_data = get_news_with_sentiment(ticker)
+        news_status, news_data = get_news_with_sentiment(company_name)
         if data is None:
             st.error("No data found for this ticker. Please check the symbol.")
             st.stop()
@@ -485,26 +485,32 @@ if "analysis_result" in st.session_state:
     # --- Recent News Expander ---
     st.markdown("---")
     with st.expander("📰 Recent News with Sentiment Analysis (to help identify crisis dates)"):
+        news_search_term = res.get('company_name', ticker)
+        st.caption(f"News search term: `{news_search_term}`")
+
         news_status = res.get('news_status')
         news_items = res.get('news', []) # This will be a list or an error string
 
         if news_status == 'ok':
             if news_items:
-                sentiment_colors = {'Positive': 'green', 'Negative': 'red', 'Neutral': 'gray'}
+                sentiment_bg_colors = {'Positive': 'rgba(40, 167, 69, 0.1)', 'Negative': 'rgba(220, 53, 69, 0.1)', 'Neutral': 'rgba(108, 117, 125, 0.1)'}
                 for item in news_items:
                     title = item.get('title', 'No Title')
                     link = item.get('link')
                     publisher = item.get('publisher', 'Unknown Publisher')
                     publish_time_unix = item.get('providerPublishTime')
+
                     if publish_time_unix:
                         publish_time = datetime.fromtimestamp(publish_time_unix).strftime('%Y-%m-%d %H:%M')
                     else:
                         publish_time = "Date not available"
+
                     sentiment_class = item.get('sentiment_class', 'Neutral')
-                    color = sentiment_colors.get(sentiment_class, 'gray')
-                    display_title = f"**{title}**" if link else f"**{title}**"
-                    st.markdown(f"<span style='color:{color};'>{display_title}</span>", unsafe_allow_html=True)
-                    st.caption(f"Published by {publisher} on {publish_time} | Sentiment: {sentiment_class}")
+                    bg_color = sentiment_bg_colors.get(sentiment_class, sentiment_bg_colors['Neutral'])
+                    display_title = f"<a href='{link}' target='_blank' style='color: inherit; text-decoration: none; font-weight: bold;'>{title}</a>" if link else f"<span style='font-weight: bold;'>{title}</span>"
+                    caption_text = f"Published by {publisher} on {publish_time} | Sentiment: {sentiment_class}"
+                    html_block = f"""<div style="background-color: {bg_color}; border-radius: 8px; padding: 12px; margin-bottom: 8px;">{display_title}<div style="font-size: 0.8em; color: #6c757d; margin-top: 4px;">{caption_text}</div></div>"""
+                    st.markdown(html_block, unsafe_allow_html=True)
         elif news_status == 'error':
             st.warning(news_items) # Display the error message
         else:
