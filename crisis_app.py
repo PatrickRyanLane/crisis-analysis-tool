@@ -362,6 +362,11 @@ if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
     trends_data = res.get('trends_data')
+    smoothed_trends = None
+    if trends_data is not None and not trends_data.empty:
+        # Smooth the trend data with a 7-day rolling average to make it less noisy and easier to interpret
+        keyword = trends_data.columns[0]
+        smoothed_trends = trends_data[keyword].rolling(window=7, center=True, min_periods=1).mean()
 
     # Notify user if trends data failed to load
     if trends_data is None:
@@ -458,6 +463,11 @@ if "analysis_result" in st.session_state:
 
     # --------- Plotting Section: Chart first ---------
 
+    st.markdown("---")
+    st.subheader("📈 Stock Price and Google Trends Chart")
+    start_y_at_zero = st.toggle("Start Y-Axis at 0", value=False, help="Toggle to see the price scale relative to zero. This can help contextualize the magnitude of price changes.")
+
+
     # Prepare response actions dates and labels
     act_dates, act_labels = [], []
     for action in st.session_state.response_actions:
@@ -489,11 +499,12 @@ if "analysis_result" in st.session_state:
     ), row=1, col=1, secondary_y=False)
 
     # Google Trends trace
-    if trends_data is not None and not trends_data.empty:
-        keyword = trends_data.columns[0] # Use the actual keyword from the returned data
+    if smoothed_trends is not None:
         fig.add_trace(go.Scatter(
-            x=trends_data.index, y=trends_data[keyword],
-            mode='lines', name='Google Trend Score', line=dict(color='purple', width=1, dash='dot')
+            x=smoothed_trends.index, y=smoothed_trends,
+            mode='lines', name='Google Trend (7-day avg)',
+            line=dict(color='rgba(128, 0, 128, 0.8)', width=1.5),
+            fill='tozeroy', fillcolor='rgba(128, 0, 128, 0.2)'
         ), row=1, col=1, secondary_y=True)
 
     # Crisis & mitigation shaded rectangles
@@ -551,6 +562,10 @@ if "analysis_result" in st.session_state:
 
     # Add a central horizontal line for the timeline axis
     fig.add_hline(y=0, line_width=2, line_color='grey', row=2, col=1)
+
+    # Conditionally set the y-axis range based on the toggle
+    if start_y_at_zero:
+        fig.update_yaxes(rangemode='tozero', row=1, col=1, secondary_y=False)
 
     fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1,
                      range=[-2, 2], showgrid=False, zeroline=False, title=None)
@@ -628,11 +643,12 @@ if "analysis_result" in st.session_state:
             line=dict(color='orange', width=1)
         ), secondary_y=False)
 
-        if trends_data is not None and not trends_data.empty:
-            keyword = trends_data.columns[0]
+        if smoothed_trends is not None:
             vol_fig.add_trace(go.Scatter(
-                x=trends_data.index, y=trends_data[keyword],
-                mode='lines', name='Google Trend Score', line=dict(color='purple', width=1, dash='dot')
+                x=smoothed_trends.index, y=smoothed_trends,
+                mode='lines', name='Google Trend (7-day avg)',
+                line=dict(color='rgba(128, 0, 128, 0.8)', width=1.5),
+                fill='tozeroy', fillcolor='rgba(128, 0, 128, 0.2)'
             ), secondary_y=True)
 
         vol_fig.add_vrect(
