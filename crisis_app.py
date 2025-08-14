@@ -735,12 +735,12 @@ if "analysis_result" in st.session_state:
         current_iv = res.get('current_iv')
         if current_iv is not None:
             st.metric(
-                "Current 30-Day IV",
+                "Current 30-Day Implied Volatility",
                 f"{current_iv:.2f}%",
                 help="The average Implied Volatility for at-the-money options expiring in ~30 days. Higher values suggest the market expects more price volatility."
             )
         else:
-            st.metric("Current 30-Day IV", "N/A")
+            st.metric("Current 30-Day Implied Volatility", "N/A")
 
     with iv_col2:
         current_iv = res.get('current_iv')
@@ -748,7 +748,7 @@ if "analysis_result" in st.session_state:
         if current_iv is not None and crisis_realized_vol is not None:
             iv_diff = current_iv - crisis_realized_vol
             st.metric(
-                "IV vs. Crisis Realized Vol",
+                "IV vs. Crisis Realized Volatility",
                 f"{iv_diff:+.2f} pts",
                 help="The difference between current 30-day IV and the annualized realized volatility during the crisis. A positive value suggests the market expects more volatility now than what actually occurred during the crisis."
             )
