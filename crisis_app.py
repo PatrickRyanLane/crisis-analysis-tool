@@ -52,11 +52,16 @@ today = datetime.today()
 crisis_start_date = st.sidebar.date_input("Crisis Start Date", value=today - timedelta(days=90))
 crisis_end_date = st.sidebar.date_input("Crisis End Date", value=today)
 
-mitigation_start_date = st.sidebar.date_input("Mitigation Start Date", value=crisis_end_date)
-mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_end_date + timedelta(days=90))
+analyze_mitigation = st.sidebar.toggle("Analyze Mitigation Period", value=True, help="Include a specific period for mitigation actions in the analysis and charts.")
 
-if mitigation_end_date < mitigation_start_date:
-    st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
+if analyze_mitigation:
+    mitigation_start_date = st.sidebar.date_input("Mitigation Start Date", value=crisis_end_date)
+    mitigation_end_date = st.sidebar.date_input("Mitigation End Date", value=crisis_end_date + timedelta(days=90))
+    if mitigation_end_date < mitigation_start_date:
+        st.sidebar.error("Mitigation End Date cannot be before Mitigation Start Date.")
+else:
+    mitigation_start_date = crisis_end_date
+    mitigation_end_date = crisis_end_date
 
 # Initialize response_actions in session state
 if "response_actions" not in st.session_state:
@@ -120,7 +125,13 @@ def get_text_positions(dates, labels):
 def editable_actions_list():
     st.subheader("🗓️ Editable Response Actions")
     indices_to_delete = []
-    should_rerun = False  # flag to trigger rerun once
+    should_rerun = False
+
+    # Header for the editable list
+    header_cols = st.columns([3, 6, 1])
+    header_cols[0].caption("Action Date")
+    header_cols[1].caption("Description")
+    header_cols[2].caption("Delete")
 
     for idx, action in enumerate(st.session_state.response_actions):
         cols = st.columns([3, 6, 1])
@@ -128,27 +139,26 @@ def editable_actions_list():
         new_date = cols[0].date_input(
             label=f"Date {idx + 1}",
             value=action['date'],
-            key=f"date_{idx}"
+            key=f"date_{idx}",
+            label_visibility="collapsed"
         )
         new_desc = cols[1].text_input(
             label=f"Description {idx + 1}",
             value=action['description'],
             max_chars=200,
-            key=f"desc_{idx}"
+            key=f"desc_{idx}",
+            label_visibility="collapsed"
         )
         if cols[2].button("❌", key=f"del_{idx}"):
             indices_to_delete.append(idx)
             should_rerun = True
 
-        if new_date != action['date'] or new_desc != action['description']:
-            st.session_state.response_actions[idx] = {'date': new_date, 'description': new_desc}
-            should_rerun = True
-
-    # Remove deleted items after loop to avoid index conflicts
+    # Process deletions before rerunning
     if indices_to_delete:
         for i in sorted(indices_to_delete, reverse=True):
             st.session_state.response_actions.pop(i)
 
+    # Remove deleted items after loop to avoid index conflicts
     if should_rerun:
         st.rerun()
 
@@ -157,24 +167,24 @@ def editable_actions_list():
 @st.cache_data
 def get_stock_data(ticker, start_date, end_date):
     """Fetches historical stock data and company info from Yahoo Finance."""
-    data = yf.Ticker(ticker).history(start=start_date, end=end_date)
+    ticker_obj = yf.Ticker(ticker)
+    data = ticker_obj.history(start=start_date, end=end_date)
     if data.empty:
         return None, None, None
-    # Ensure timezone is set to UTC for consistency
+
     if data.index.tz is None:
         data.index = data.index.tz_localize('UTC')
     else:
         data.index = data.index.tz_convert('UTC')
 
-    # Get company info
     try:
-        stock_info = yf.Ticker(ticker).info
+        stock_info = ticker_obj.info
         long_name = stock_info.get('longName', ticker)
         company_name = simplify_company_name(long_name)
-        shares_outstanding = stock_info.get('sharesOutstanding', 1000000000)
+        shares_outstanding = stock_info.get('sharesOutstanding') # Will be None if not found
     except Exception:
         company_name = ticker
-        shares_outstanding = 1000000000
+        shares_outstanding = None
 
     return data, company_name, shares_outstanding
 
@@ -182,17 +192,30 @@ def get_stock_data(ticker, start_date, end_date):
 def get_news_with_sentiment(ticker):
     """Fetches recent news, performs sentiment analysis, and caches the result."""
     try:
-        news = yf.Ticker(ticker).news
-        for item in news:
-            title = item.get('title', '')
-            score = sia.polarity_scores(title)['compound']
-            item['sentiment_score'] = score
-            if score >= 0.05: item['sentiment_class'] = 'Positive'
-            elif score <= -0.05: item['sentiment_class'] = 'Negative'
-            else: item['sentiment_class'] = 'Neutral'
-        return news
-    except Exception:
-        return []
+        news_list = yf.Search(ticker).news
+        processed_news = []
+        if not news_list:
+            return "no_news", []
+
+        for item in news_list:
+            # Only process items that have a valid title
+            if item and item.get('title'):
+                title = item['title']
+                score = sia.polarity_scores(title)['compound']
+                item['sentiment_score'] = score
+                if score >= 0.05: item['sentiment_class'] = 'Positive'
+                elif score <= -0.05: item['sentiment_class'] = 'Negative'
+                else: item['sentiment_class'] = 'Neutral'
+                processed_news.append(item)
+        
+        if not processed_news:
+            return "no_news", []
+
+        return "ok", processed_news
+    except Exception as e:
+        error_message = f"Could not fetch news. This is often an intermittent issue with the `yfinance` library or network connectivity. Please try again later."
+        print(f"yfinance news error for {ticker}: {e}") # For server-side logging
+        return "error", error_message
 
 @st.cache_data
 def get_trends_data(keyword, start_date, end_date):
@@ -236,6 +259,7 @@ current_params = {
     "ticker": ticker,
     "crisis_start_date": crisis_start_date,
     "crisis_end_date": crisis_end_date,
+    "analyze_mitigation": analyze_mitigation,
     "mitigation_start_date": mitigation_start_date,
     "mitigation_end_date": mitigation_end_date,
     "user_tz_str": user_tz_str,
@@ -257,7 +281,7 @@ if should_run_analysis:
         end_date_obj = max(crisis_end.date(), mitigation_end_date) + timedelta(days=90)
 
         data, company_name, shares_outstanding = get_stock_data(ticker, start_date_obj.strftime("%Y-%m-%d"), end_date_obj.strftime("%Y-%m-%d"))
-        news = get_news_with_sentiment(ticker)
+        news_status, news_data = get_news_with_sentiment(ticker)
         if data is None:
             st.error("No data found for this ticker. Please check the symbol.")
             st.stop()
@@ -299,7 +323,10 @@ if should_run_analysis:
 
         # Calculate market cap change based on the average price difference
         # This provides a more stable measure of impact than using the single lowest point.
-        market_cap_change = (crisis_avg - pre_crisis_avg) * shares_outstanding
+        if shares_outstanding:
+            market_cap_change = (crisis_avg - pre_crisis_avg) * shares_outstanding
+        else:
+            market_cap_change = None
 
         # Fetch Google Trends data
         trends_keyword_override = st.session_state.get("trends_keyword_override", "")
@@ -332,7 +359,11 @@ if should_run_analysis:
             related_queries=related_queries,
             company_name=company_name, # The simplified name
             trends_search_term=trends_search_term,
-            news=news
+            analyze_mitigation=analyze_mitigation,
+            mitigation_start_date_val=mitigation_start_date,
+            mitigation_end_date_val=mitigation_end_date,
+            news_status=news_status,
+            news=news_data
         )
 
         # Store the parameters of this successful analysis
@@ -348,6 +379,11 @@ if "analysis_result" in st.session_state:
     res = st.session_state.analysis_result
     data = res['data']
     trends_data = res.get('trends_data')
+    smoothed_trends = None
+    if trends_data is not None and not trends_data.empty:
+        # Smooth the trend data with a 7-day rolling average to make it less noisy and easier to interpret
+        keyword = trends_data.columns[0]
+        smoothed_trends = trends_data[keyword].rolling(window=7, center=True, min_periods=1).mean()
 
     # Notify user if trends data failed to load
     if trends_data is None:
@@ -357,20 +393,42 @@ if "analysis_result" in st.session_state:
     col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
-        st.metric("Pre-Crisis Avg", f"${res['pre_crisis_avg']:.2f}")
+        st.metric(
+            "Pre-Crisis Avg", 
+            f"${res['pre_crisis_avg']:.2f}",
+            help="The average closing stock price for the 90 days leading up to the crisis start date."
+        )
     with col2:
-        st.metric("Crisis Minimum", f"${res['crisis_min']:.2f}", delta=f"{res['max_decline']:.1f}%")
+        st.metric(
+            "Crisis Minimum", 
+            f"${res['crisis_min']:.2f}", 
+            delta=f"{res['max_decline']:.1f}%",
+            help="The lowest closing price during the crisis period. The delta shows the percentage change from the pre-crisis average. Formula: `((Crisis Minimum - Pre-Crisis Avg) / Pre-Crisis Avg) * 100`"
+        )
     with col3:
-        st.metric("Crisis Avg", f"${res['crisis_avg']:.2f}", delta=f"{res['avg_decline']:.1f}%")
+        st.metric(
+            "Crisis Avg", 
+            f"${res['crisis_avg']:.2f}", 
+            delta=f"{res['avg_decline']:.1f}%",
+            help="The average closing price during the crisis period. The delta shows the percentage change from the pre-crisis average. Formula: `((Crisis Avg - Pre-Crisis Avg) / Pre-Crisis Avg) * 100`"
+        )
     with col4:
         if not res['post_crisis_data'].empty:
-            st.metric("Post-Crisis Recovery Avg", f"{res['recovery_percentage']:.1f}%")
+            st.metric(
+                "Post-Crisis Recovery Avg", 
+                f"{res['recovery_percentage']:.1f}%",
+                help="The percentage gain from the crisis low price to the average price in the post-crisis period. Formula: `((Avg Post-Crisis Price - Crisis Low) / Crisis Low) * 100`"
+            )
             st.caption(f"Avg post-crisis close: ${res['post_crisis_avg']:.2f}")
         else:
             st.metric("Post-Crisis Recovery", "Not enough data")
     with col5:
         if not res['post_crisis_data'].empty:
-            st.metric("Recovery to Current Price", f"{res['current_recovery_percentage']:.1f}%")
+            st.metric(
+                "Recovery to Current Price", 
+                f"{res['current_recovery_percentage']:.1f}%",
+                help="The percentage gain from the crisis low price to the most recent closing price. Formula: `((Current Price - Crisis Low) / Crisis Low) * 100`"
+            )
             st.caption(f"Current price: ${res['current_postcrisis_price']:.2f}")
             st.caption(f"Difference from crisis min: "
                        f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
@@ -381,19 +439,29 @@ if "analysis_result" in st.session_state:
 
     with impact_col1:
         st.subheader("💰 Economic Impact Analysis")
-        mc_change = res.get('market_cap_change', 0)
-        if mc_change < 0:
-            label = "Est. Market Cap Loss:"
-            value_str = f"${abs(mc_change):,.0f}"
+        mc_change = res.get('market_cap_change')
+        
+        if mc_change is not None:
+            if mc_change < 0:
+                label = "Est. Market Cap Loss:"
+                value_str = f"${abs(mc_change):,.0f}"
+            else:
+                label = "Est. Market Cap Gain:"
+                value_str = f"${mc_change:,.0f}"
+            calc_string = f"(\${res['crisis_avg']:.2f} - \${res['pre_crisis_avg']:.2f}) * {res['shares_outstanding']:,} shares"
+            calc_caption = f"Calculation: {calc_string}"
         else:
-            label = "Est. Market Cap Gain:"
-            value_str = f"${mc_change:,.0f}"
+            label = "Est. Market Cap Change:"
+            value_str = "`Data not available`"
+            calc_caption = "Could not retrieve the number of outstanding shares for this ticker."
 
         st.markdown(f"**{label}** {value_str}", help="Market Cap Change = (Average Crisis Price - Average Pre-Crisis Price) * Shares Outstanding")
+        st.caption(calc_caption)
         st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
         st.write(f"**Crisis Duration:** {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days")
-        st.write(f"**Mitigation Period:** {mitigation_start_date} to {mitigation_end_date} "
-                 f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
+        if res.get('analyze_mitigation'):
+            st.write(f"**Mitigation Period:** {res['mitigation_start_date_val']} to {res['mitigation_end_date_val']} "
+                     f"({(res['mitigation_end_utc'] - res['mitigation_start_utc']).days} days)")
 
     with impact_col2:
         st.subheader("📈 Google Trends Insights")
@@ -417,27 +485,37 @@ if "analysis_result" in st.session_state:
     # --- Recent News Expander ---
     st.markdown("---")
     with st.expander("📰 Recent News with Sentiment Analysis (to help identify crisis dates)"):
-        news_items = res.get('news', [])
-        if news_items:
-            sentiment_colors = {'Positive': 'green', 'Negative': 'red', 'Neutral': 'gray'}
-            for item in news_items:
-                title = item.get('title')
-                link = item.get('link')
-                publisher = item.get('publisher')
-                publish_time_unix = item.get('providerPublishTime')
-                if publish_time_unix:
-                    publish_time = datetime.fromtimestamp(publish_time_unix).strftime('%Y-%m-%d %H:%M')
-                else:
-                    publish_time = "Date not available"
-                sentiment_class = item.get('sentiment_class', 'Neutral')
-                color = sentiment_colors.get(sentiment_class, 'gray')
+        news_status = res.get('news_status')
+        news_items = res.get('news', []) # This will be a list or an error string
 
-                st.markdown(f"<span style='color:{color};'>**[{title}]({link})**</span>", unsafe_allow_html=True)
-                st.caption(f"Published by {publisher} on {publish_time} | Sentiment: {sentiment_class}")
+        if news_status == 'ok':
+            if news_items:
+                sentiment_colors = {'Positive': 'green', 'Negative': 'red', 'Neutral': 'gray'}
+                for item in news_items:
+                    title = item.get('title', 'No Title')
+                    link = item.get('link')
+                    publisher = item.get('publisher', 'Unknown Publisher')
+                    publish_time_unix = item.get('providerPublishTime')
+                    if publish_time_unix:
+                        publish_time = datetime.fromtimestamp(publish_time_unix).strftime('%Y-%m-%d %H:%M')
+                    else:
+                        publish_time = "Date not available"
+                    sentiment_class = item.get('sentiment_class', 'Neutral')
+                    color = sentiment_colors.get(sentiment_class, 'gray')
+                    display_title = f"**{title}**" if link else f"**{title}**"
+                    st.markdown(f"<span style='color:{color};'>{display_title}</span>", unsafe_allow_html=True)
+                    st.caption(f"Published by {publisher} on {publish_time} | Sentiment: {sentiment_class}")
+        elif news_status == 'error':
+            st.warning(news_items) # Display the error message
         else:
             st.write("No recent news found for this ticker.")
 
     # --------- Plotting Section: Chart first ---------
+
+    st.markdown("---")
+    st.subheader("📈 Stock Price and Google Trends Chart")
+    start_y_at_zero = st.toggle("Start Y-Axis at 0", value=False, help="Toggle to see the price scale relative to zero. This can help contextualize the magnitude of price changes.")
+
 
     # Prepare response actions dates and labels
     act_dates, act_labels = [], []
@@ -459,7 +537,7 @@ if "analysis_result" in st.session_state:
         shared_xaxes=True,
         row_heights=[0.85, 0.15],
         vertical_spacing=0.01,
-        row_titles=["Stock Price Chart", "Response Actions Timeline"],
+        row_titles=["", "Response Actions<br>Timeline"],
         specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
     )
 
@@ -470,49 +548,85 @@ if "analysis_result" in st.session_state:
     ), row=1, col=1, secondary_y=False)
 
     # Google Trends trace
-    if trends_data is not None and not trends_data.empty:
-        keyword = trends_data.columns[0] # Use the actual keyword from the returned data
+    if smoothed_trends is not None:
         fig.add_trace(go.Scatter(
-            x=trends_data.index, y=trends_data[keyword],
-            mode='lines', name='Google Trend Score', line=dict(color='purple', width=1, dash='dot')
+            x=smoothed_trends.index, y=smoothed_trends,
+            mode='lines', name='Google Trend (7-day avg)',
+            line=dict(color='rgba(128, 0, 128, 0.8)', width=1.5),
+            fill='tozeroy', fillcolor='rgba(128, 0, 128, 0.2)'
         ), row=1, col=1, secondary_y=True)
 
     # Crisis & mitigation shaded rectangles
     fig.add_vrect(x0=res['crisis_start_utc'].replace(tzinfo=None), x1=res['crisis_end_utc'].replace(tzinfo=None),
                   fillcolor="red", opacity=0.2, layer="below", line_width=0,
                   annotation_text="Crisis Period", annotation_position="top left", row=1, col=1)
-    fig.add_vrect(x0=res['mitigation_start_utc'].replace(tzinfo=None), x1=res['mitigation_end_utc'].replace(tzinfo=None),
-                  fillcolor="green", opacity=0.13, layer="below", line_width=0,
-                  annotation_text="Mitigation Period", annotation_position="top right", row=1, col=1)
+    if res.get('analyze_mitigation'):
+        fig.add_vrect(x0=res['mitigation_start_utc'].replace(tzinfo=None), x1=res['mitigation_end_utc'].replace(tzinfo=None),
+                      fillcolor="green", opacity=0.13, layer="below", line_width=0,
+                      annotation_text="Mitigation Period", annotation_position="top right", row=1, col=1)
 
     # Lines for averages and min
     fig.add_hline(y=res['pre_crisis_avg'], line_dash="dash", line_color="green",
                   annotation_text="Pre-Crisis Average", row=1, col=1)
     fig.add_hline(y=res['crisis_min'], line_dash="dash", line_color="red",
-                  annotation_text="Crisis Minimum", row=1, col=1)
+                  annotation_text="Crisis Low Price", row=1, col=1)
 
-    # Timeline event points - markers only, labels on hover (no text to avoid overlap)
+    # Add a dummy trace to ensure the timeline subplot is always drawn,
+    # making the central line and x-axis visible even with no actions.
+    fig.add_trace(go.Scatter(
+        x=[data.index[0]], y=[0], mode='markers', marker=dict(opacity=0),
+        hoverinfo='none', showlegend=False
+    ), row=2, col=1)
+
+    # Timeline event points with alternating stems for better visualization
     if act_dates:
+        # Create alternating y-positions for markers to prevent overlap
+        y_positions = [1 if i % 2 == 0 else -1 for i in range(len(act_dates))]
+
+        # Add vertical stems from the center line to the markers
+        stem_x, stem_y = [], []
+        for date, y_pos in zip(act_dates, y_positions):
+            stem_x.extend([date, date, None])
+            stem_y.extend([0, y_pos, None])
+        
+        fig.add_trace(go.Scatter(
+            x=stem_x,
+            y=stem_y,
+            mode='lines',
+            line=dict(color='grey', width=1),
+            hoverinfo='none',
+            showlegend=False
+        ), row=2, col=1)
+
+        # Add markers at the end of the stems
         fig.add_trace(go.Scatter(
             x=act_dates,
-            y=np.ones(len(act_dates)),
+            y=y_positions,
             mode="markers",
-            marker=dict(symbol="circle", size=12, color="#045d1f"),
-            hovertext=[f"{label}: {date.strftime('%Y-%m-%d')}" for label, date in zip(act_labels, act_dates)],
+            marker=dict(symbol="circle", size=12, color="#045d1f", line=dict(width=1, color='white')),
+            hovertext=[f"<b>{label}</b><br>{date.strftime('%b %d, %Y')}" for label, date in zip(act_labels, act_dates)],
             hoverinfo='text',
             name="Response Actions",
             showlegend=False
         ), row=2, col=1)
 
+    # Add a central horizontal line for the timeline axis
+    fig.add_hline(y=0, line_width=2, line_color='grey', row=2, col=1)
+
+    # Conditionally set the y-axis range based on the toggle
+    if start_y_at_zero:
+        fig.update_yaxes(rangemode='tozero', row=1, col=1, secondary_y=False)
+
     fig.update_yaxes(showticklabels=False, fixedrange=True, row=2, col=1,
-                     range=[0.5, 1.5], showgrid=False, zeroline=False, title=None)
-    fig.update_xaxes(title="Date", row=2, col=1)
+                     range=[-2, 2], showgrid=False, zeroline=False, title=None)
+    fig.update_xaxes(title="Date", row=2, col=1, tickformat="%b %d, %Y")
     fig.update_yaxes(title_text="Price ($)", row=1, col=1, secondary_y=False)
     fig.update_yaxes(title_text="Google Trend (0-100)", row=1, col=1, secondary_y=True, showgrid=False)
     fig.update_layout(
         height=700,
         title=f"{ticker} Stock Price & Google Trends During Crisis",
-        showlegend=True
+        showlegend=True,
+        margin=dict(l=20, r=40, t=50, b=20) # Add margin to prevent label overlap
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -565,6 +679,7 @@ if "analysis_result" in st.session_state:
     }).dropna()
 
     st.dataframe(timeline_data.round(2), use_container_width=True)
+    st.caption("Volatility is measured by the standard deviation of the closing price for each period.")
 
     if 'Volume' in data.columns:
         st.subheader("📊 Trading Volume Analysis")
@@ -579,26 +694,30 @@ if "analysis_result" in st.session_state:
             line=dict(color='orange', width=1)
         ), secondary_y=False)
 
-        if trends_data is not None and not trends_data.empty:
-            keyword = trends_data.columns[0]
+        if smoothed_trends is not None:
             vol_fig.add_trace(go.Scatter(
-                x=trends_data.index, y=trends_data[keyword],
-                mode='lines', name='Google Trend Score', line=dict(color='purple', width=1, dash='dot')
+                x=smoothed_trends.index, y=smoothed_trends,
+                mode='lines', name='Google Trend (7-day avg)',
+                line=dict(color='rgba(128, 0, 128, 0.8)', width=1.5),
+                fill='tozeroy', fillcolor='rgba(128, 0, 128, 0.2)'
             ), secondary_y=True)
 
         vol_fig.add_vrect(
             x0=res['crisis_start_utc'], x1=res['crisis_end_utc'],
             fillcolor="red", opacity=0.18, line_width=0
         )
-        vol_fig.add_vrect(
-            x0=res['mitigation_start_utc'], x1=res['mitigation_end_utc'],
-            fillcolor="green", opacity=0.12, line_width=0
-        )
+        if res.get('analyze_mitigation'):
+            vol_fig.add_vrect(
+                x0=res['mitigation_start_utc'], x1=res['mitigation_end_utc'],
+                fillcolor="green", opacity=0.12, line_width=0
+            )
 
         vol_fig.update_layout(
             title_text=f"{ticker} Trading Volume & Google Trends",
-            showlegend=True
+            showlegend=True,
+            margin=dict(l=20, r=40, t=50, b=20)
         )
+        vol_fig.update_xaxes(tickformat="%b %d, %Y")
         vol_fig.update_yaxes(title_text="Trading Volume", secondary_y=False)
         vol_fig.update_yaxes(title_text="Google Trend (0-100)", secondary_y=True, showgrid=False)
         st.plotly_chart(vol_fig, use_container_width=True)
