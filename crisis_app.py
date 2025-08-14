@@ -181,10 +181,10 @@ def get_stock_data(ticker, start_date, end_date):
         stock_info = ticker_obj.info
         long_name = stock_info.get('longName', ticker)
         company_name = simplify_company_name(long_name)
-        shares_outstanding = stock_info.get('sharesOutstanding', 1000000000)
+        shares_outstanding = stock_info.get('sharesOutstanding') # Will be None if not found
     except Exception:
         company_name = ticker
-        shares_outstanding = 1000000000
+        shares_outstanding = None
 
     return data, company_name, shares_outstanding
 
@@ -323,7 +323,10 @@ if should_run_analysis:
 
         # Calculate market cap change based on the average price difference
         # This provides a more stable measure of impact than using the single lowest point.
-        market_cap_change = (crisis_avg - pre_crisis_avg) * shares_outstanding
+        if shares_outstanding:
+            market_cap_change = (crisis_avg - pre_crisis_avg) * shares_outstanding
+        else:
+            market_cap_change = None
 
         # Fetch Google Trends data
         trends_keyword_override = st.session_state.get("trends_keyword_override", "")
@@ -414,15 +417,21 @@ if "analysis_result" in st.session_state:
 
     with impact_col1:
         st.subheader("💰 Economic Impact Analysis")
-        mc_change = res.get('market_cap_change', 0)
-        if mc_change < 0:
-            label = "Est. Market Cap Loss:"
-            value_str = f"${abs(mc_change):,.0f}"
+        mc_change = res.get('market_cap_change')
+        if mc_change is not None:
+            if mc_change < 0:
+                label = "Est. Market Cap Loss:"
+                value_str = f"${abs(mc_change):,.0f}"
+            else:
+                label = "Est. Market Cap Gain:"
+                value_str = f"${mc_change:,.0f}"
+            st.markdown(f"**{label}** {value_str}")
+            # Display the dynamic calculation
+            calc_string = f"(_${res['crisis_avg']:.2f}_ - _${res['pre_crisis_avg']:.2f}_) * _{res['shares_outstanding']:,}_ shares"
+            st.caption(f"Calculation: {calc_string}")
         else:
-            label = "Est. Market Cap Gain:"
-            value_str = f"${mc_change:,.0f}"
-
-        st.markdown(f"**{label}** {value_str}", help="Market Cap Change = (Average Crisis Price - Average Pre-Crisis Price) * Shares Outstanding")
+            st.markdown("**Market Cap Change:** `Data not available`")
+            st.caption("Could not retrieve the number of outstanding shares for this ticker.")
         st.write(f"**Maximum Stock Price Decline:** {abs(res['max_decline']):.1f}%")
         st.write(f"**Crisis Duration:** {(res['crisis_end_utc'] - res['crisis_start_utc']).days} days")
         if res.get('analyze_mitigation'):
