@@ -721,11 +721,20 @@ if "analysis_result" in st.session_state:
         ]
     }).dropna()
 
-    st.dataframe(timeline_data.round(2), use_container_width=True)
-    st.caption(
-        "**Price Volatility** is the standard deviation of the closing price for each period, measuring how much the price actually fluctuated. "
-        "This is different from **Implied Volatility (IV)**, which is a forward-looking measure of expected future volatility."
+    # Create a custom table to allow for tooltips in the header
+    header_cols = st.columns((3, 2, 2))
+    header_cols[0].markdown("**Period**")
+    header_cols[1].markdown("**Avg Price**")
+    header_cols[2].markdown(
+        "**Price Volatility (Std Dev)**",
+        help="The standard deviation of the closing price for each period, measuring how much the price actually fluctuated. This is different from Implied Volatility (IV), which is a forward-looking measure of expected future volatility."
     )
+
+    for _, row in timeline_data.iterrows():
+        row_cols = st.columns((3, 2, 2))
+        row_cols[0].write(row['Period'])
+        row_cols[1].write(f"${row['Avg Price']:.2f}")
+        row_cols[2].write(f"{row['Price Volatility (Std Dev)']:.2f}")
 
     # --- Volatility Analysis Section ---
     st.subheader("⚡ Volatility Analysis")
