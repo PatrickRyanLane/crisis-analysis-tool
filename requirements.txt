@@ -6,3 +6,4 @@ plotly
 pytrends
 nltk
 streamlit-authenticator
+PyYAML

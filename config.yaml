@@ -1,0 +1,14 @@
+credentials:
+  usernames:
+    testuser:
+      email: testuser@example.com
+      name: Test User
+      password: '$2b$12$E.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5'
+    anotheruser:
+      email: anotheruser@example.com
+      name: Another User
+      password: '$2b$12$H.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5'
+cookie:
+  expiry_days: 30
+  key: a_secret_key
+  name: crisis_app_cookie

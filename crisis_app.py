@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import pytz
 import re
 from pytrends.request import TrendReq
+import yaml
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import streamlit_authenticator as stauth
 from database import initialize_db, save_dashboard_to_db, load_dashboard_from_db
@@ -32,24 +33,16 @@ st.set_page_config(
 )
 
 # --- User Authentication ---
-# Use the generate_keys.py script to create secure password hashes.
-config = {
-    "credentials": {
-        "usernames": {
-            "testuser": {
-                "name": "Test User",
-                "password": "$2b$12$E.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5" # Hashed "password123"
-            },
-            "anotheruser":{
-                "name": "Another User",
-                "password": "$2b$12$H.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5" # Hashed "password456"
-            }
-        },
-    },
-    "cookie": {"expiry_days": 30, "key": "a_secret_key", "name": "crisis_app_cookie"}
-}
+# Load config from YAML file
+with open('config.yaml') as file:
+    config = yaml.load(file, loader=yaml.SafeLoader)
 
-authenticator = stauth.Authenticate(config['credentials'], config['cookie']['name'], config['cookie']['key'], config['cookie']['expiry_days'])
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
+)
 authenticator.login()
 
 st.title("🚨 Reputational Crisis Impact Analysis Tool")
@@ -123,7 +116,7 @@ def deserialize_dashboard(serialized_dashboard):
 # Load dashboard from DB after successful login
 if st.session_state.get("authentication_status"):
     if "saved_crises" not in st.session_state:
-        saved_crises_json = load_dashboard_from_db(st.session_state['username'])
+        saved_crises_json = load_dashboard_from_db(st.session_state.get('username'))
         if saved_crises_json:
             st.session_state.saved_crises = deserialize_dashboard(saved_crises_json)
         else:
@@ -468,9 +461,22 @@ if should_run_analysis:
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
 
-if not st.session_state.get("authentication_status"):
-    st.warning("Please log in to use the analysis tool.")
-    st.stop()
+if st.session_state["authentication_status"] is False:
+    st.error('Username/password is incorrect')
+elif st.session_state["authentication_status"] is None:
+    st.warning('Please enter your username and password')
+
+# --- Registration Form ---
+if not st.session_state["authentication_status"]:
+    try:
+        if authenticator.register_user('Register user', preauthorization=False):
+            st.success('User registered successfully, please log in.')
+            # Save the updated config back to the YAML file
+            with open('config.yaml', 'w') as file:
+                yaml.dump(config, file, default_flow_style=False)
+    except Exception as e:
+        st.error(e)
+    st.stop() # Stop execution if not logged in
 
 # --- Crisis Dashboard Display ---
 if st.session_state.saved_crises:
@@ -665,7 +671,7 @@ if "analysis_result" in st.session_state:
         if not is_duplicate:
             st.session_state.saved_crises.append(crisis_summary)
             serializable_data = serialize_dashboard(st.session_state.saved_crises)
-            save_dashboard_to_db(st.session_state['username'], serializable_data)
+            save_dashboard_to_db(st.session_state.get('username'), serializable_data)
             st.toast(f"Added {ticker} crisis to dashboard!", icon="✅")
             st.rerun()
         else:
@@ -1036,11 +1042,10 @@ if "analysis_result" in st.session_state:
     """)
 
 else:
-    if st.session_state.get("authentication_status"):
-        st.info("Enter a stock ticker and adjust the dates in the sidebar to begin your analysis.")
+    st.info("Enter a stock ticker and adjust the dates in the sidebar to begin your analysis.")
 
 with st.sidebar:
-    if st.session_state.get("authentication_status"):
-        authenticator.logout()
+    st.write(f"Welcome, {st.session_state.get('name')}!")
+    authenticator.logout()
 
 # End of app
