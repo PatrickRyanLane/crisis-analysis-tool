@@ -469,7 +469,7 @@ elif st.session_state["authentication_status"] is None:
 # --- Registration Form ---
 if not st.session_state["authentication_status"]:
     try:
-        if authenticator.register_user('Register user'):
+        if authenticator.register_user():
             st.success('User registered successfully, please log in.')
             # Save the updated config back to the YAML file
             with open('config.yaml', 'w') as file:
