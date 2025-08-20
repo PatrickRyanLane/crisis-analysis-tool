@@ -497,6 +497,10 @@ if "analysis_result" in st.session_state:
         keyword = trends_data.columns[0]
         smoothed_trends = trends_data[keyword].rolling(window=7, center=True, min_periods=1).mean()
 
+    # --- Header for the current analysis ---
+    st.markdown("---")
+    st.subheader(f"Current Analysis: {res.get('company_name', ticker)} ({ticker})")
+
     # Notify user if trends data failed to load
     if trends_data is None:
         search_term_used = res.get('trends_search_term', ticker)
