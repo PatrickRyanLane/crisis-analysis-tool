@@ -70,6 +70,8 @@ if "trends_keyword_override" not in st.session_state:
     st.session_state.trends_keyword_override = ""
 if "last_analysis_params" not in st.session_state:
     st.session_state.last_analysis_params = {}
+if "saved_crises" not in st.session_state:
+    st.session_state.saved_crises = []
 
 # --- Helper functions ---
 def simplify_company_name(name):
@@ -410,6 +412,35 @@ if should_run_analysis:
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
 
+# --- Crisis Dashboard Display ---
+if st.session_state.saved_crises:
+    st.markdown("---")
+    st.subheader("📊 Crisis Dashboard")
+    
+    # Allow clearing the dashboard
+    if st.button("Clear Dashboard"):
+        st.session_state.saved_crises = []
+        st.rerun()
+
+    # Display saved crises in columns
+    num_crises = len(st.session_state.saved_crises)
+    cols = st.columns(num_crises)
+    for i, crisis in enumerate(st.session_state.saved_crises):
+        with cols[i]:
+            st.markdown(f"##### {crisis['ticker']}")
+            st.caption(f"{crisis['start_date']} to {crisis['end_date']}")
+            st.metric("Max Decline", f"{crisis['max_decline']:.1f}%")
+            
+            mc_change = crisis.get('market_cap_change')
+            if mc_change is not None:
+                if mc_change < 0:
+                    st.metric("Market Cap Change", f"-${abs(mc_change)/1e9:.2f}B")
+                else:
+                    st.metric("Market Cap Change", f"+${mc_change/1e9:.2f}B")
+            else:
+                st.metric("Market Cap Change", "N/A")
+    st.markdown("---")
+
 # -------- Main Analysis Results and Metrics -----------
 
 if "analysis_result" in st.session_state:
@@ -471,6 +502,23 @@ if "analysis_result" in st.session_state:
                        f"${res['current_postcrisis_price'] - res['crisis_min']:.2f}")
         else:
             st.metric("Recovery to Current", "Not enough data")
+
+    # --- Add to Dashboard Button ---
+    if st.button("Add to Crisis Dashboard", use_container_width=True):
+        crisis_summary = {
+            "ticker": ticker,
+            "start_date": crisis_start_date.strftime("%Y-%m-%d"),
+            "end_date": crisis_end_date.strftime("%Y-%m-%d"),
+            "max_decline": res.get('max_decline', 0),
+            "market_cap_change": res.get('market_cap_change')
+        }
+        # Avoid adding duplicates
+        if crisis_summary not in st.session_state.saved_crises:
+            st.session_state.saved_crises.append(crisis_summary)
+            st.toast(f"Added {ticker} crisis to dashboard!", icon="✅")
+            st.rerun()
+        else:
+            st.toast("This crisis is already on the dashboard.", icon="ℹ️")
 
     impact_col1, impact_col2 = st.columns(2)
 
