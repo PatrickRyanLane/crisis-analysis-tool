@@ -33,21 +33,23 @@ st.set_page_config(
 
 # --- User Authentication ---
 # Use the generate_keys.py script to create secure password hashes.
-users = {
-    "usernames": {
-        "testuser": {
-            "name": "Test User",
-            "password": "$2b$12$E.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5" # Hashed "password123"
+config = {
+    "credentials": {
+        "usernames": {
+            "testuser": {
+                "name": "Test User",
+                "password": "$2b$12$E.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5" # Hashed "password123"
+            },
+            "anotheruser":{
+                "name": "Another User",
+                "password": "$2b$12$H.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5" # Hashed "password456"
+            }
         },
-        "anotheruser":{
-            "name": "Another User",
-            "password": "$2b$12$H.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5" # Hashed "password456"
-        }
     },
     "cookie": {"expiry_days": 30, "key": "a_secret_key", "name": "crisis_app_cookie"}
 }
 
-authenticator = stauth.Authenticate(users['usernames'], users['cookie']['name'], users['cookie']['key'], users['cookie']['expiry_days'])
+authenticator = stauth.Authenticate(config['credentials'], config['cookie']['name'], config['cookie']['key'], config['cookie']['expiry_days'])
 name, authentication_status, username = authenticator.login('Login', 'main')
 
 st.title("🚨 Reputational Crisis Impact Analysis Tool")
