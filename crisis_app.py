@@ -50,7 +50,7 @@ config = {
 }
 
 authenticator = stauth.Authenticate(config['credentials'], config['cookie']['name'], config['cookie']['key'], config['cookie']['expiry_days'])
-name, authentication_status, username = authenticator.login()
+authenticator.login()
 
 st.title("🚨 Reputational Crisis Impact Analysis Tool")
 st.markdown("**Analyze the economic impact of reputational crises on stock prices**")
@@ -121,9 +121,9 @@ def deserialize_dashboard(serialized_dashboard):
     return dashboard
 
 # Load dashboard from DB after successful login
-if authentication_status:
+if st.session_state.get("authentication_status"):
     if "saved_crises" not in st.session_state:
-        saved_crises_json = load_dashboard_from_db(username)
+        saved_crises_json = load_dashboard_from_db(st.session_state['username'])
         if saved_crises_json:
             st.session_state.saved_crises = deserialize_dashboard(saved_crises_json)
         else:
@@ -468,14 +468,14 @@ if should_run_analysis:
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
 
-if not authentication_status:
+if not st.session_state.get("authentication_status"):
     st.warning("Please log in to use the analysis tool.")
     st.stop()
 
 # --- Crisis Dashboard Display ---
 if st.session_state.saved_crises:
     st.markdown("---")
-    st.subheader(f"📊 {name}'s Crisis Dashboard")
+    st.subheader(f"📊 {st.session_state['name']}'s Crisis Dashboard")
     
     # Allow clearing the dashboard
     if st.button("Clear Dashboard"):
@@ -665,7 +665,7 @@ if "analysis_result" in st.session_state:
         if not is_duplicate:
             st.session_state.saved_crises.append(crisis_summary)
             serializable_data = serialize_dashboard(st.session_state.saved_crises)
-            save_dashboard_to_db(username, serializable_data)
+            save_dashboard_to_db(st.session_state['username'], serializable_data)
             st.toast(f"Added {ticker} crisis to dashboard!", icon="✅")
             st.rerun()
         else:
@@ -1036,9 +1036,11 @@ if "analysis_result" in st.session_state:
     """)
 
 else:
-    if authentication_status:
+    if st.session_state.get("authentication_status"):
         st.info("Enter a stock ticker and adjust the dates in the sidebar to begin your analysis.")
 
-authenticator.logout('Logout', 'sidebar')
+with st.sidebar:
+    if st.session_state.get("authentication_status"):
+        authenticator.logout()
 
 # End of app
