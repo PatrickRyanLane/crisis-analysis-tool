@@ -11,7 +11,7 @@ from pytrends.request import TrendReq
 import yaml
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import streamlit_authenticator as stauth
-from database import initialize_db, save_dashboard_to_db, load_dashboard_from_db
+import database
 import nltk
 import warnings
 
@@ -23,7 +23,7 @@ def get_sentiment_analyzer():
     return SentimentIntensityAnalyzer()
 
 sia = get_sentiment_analyzer()
-initialize_db() # Ensure the database and table exist
+database.initialize_db() # Ensure the database and table exist
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
@@ -116,7 +116,7 @@ def deserialize_dashboard(serialized_dashboard):
 # Load dashboard from DB after successful login
 if st.session_state.get("authentication_status"):
     if "saved_crises" not in st.session_state:
-        saved_crises_json = load_dashboard_from_db(st.session_state.get('username'))
+        saved_crises_json = database.load_dashboard_from_db(st.session_state.get('username'))
         if saved_crises_json:
             st.session_state.saved_crises = deserialize_dashboard(saved_crises_json)
         else:
@@ -486,6 +486,7 @@ if st.session_state.saved_crises:
     # Allow clearing the dashboard
     if st.button("Clear Dashboard"):
         st.session_state.saved_crises = []
+        database.save_dashboard_to_db(st.session_state.get('username'), [])
         st.rerun()
 
     # Display saved crises in columns
@@ -671,7 +672,7 @@ if "analysis_result" in st.session_state:
         if not is_duplicate:
             st.session_state.saved_crises.append(crisis_summary)
             serializable_data = serialize_dashboard(st.session_state.saved_crises)
-            save_dashboard_to_db(st.session_state.get('username'), serializable_data)
+            database.save_dashboard_to_db(st.session_state.get('username'), serializable_data)
             st.toast(f"Added {ticker} crisis to dashboard!", icon="✅")
             st.rerun()
         else:
