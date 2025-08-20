@@ -43,13 +43,49 @@ authenticator = stauth.Authenticate(
     config['cookie']['key'],
     config['cookie']['expiry_days']
 )
-authenticator.login()
 
 st.title("🚨 Reputational Crisis Impact Analysis Tool")
 st.markdown("**Analyze the economic impact of reputational crises on stock prices**")
 
+# --- State for switching between login and register forms ---
+if 'form_to_show' not in st.session_state:
+    st.session_state.form_to_show = 'login'
+
+def set_form(form_name):
+    st.session_state.form_to_show = form_name
+
+# --- Authentication Wall ---
+# If user is not logged in, show login/register forms and hide the rest of the app.
+if not st.session_state.get("authentication_status"):
+    if st.session_state.form_to_show == 'login':
+        authenticator.login()
+        if st.session_state["authentication_status"] is False:
+            st.error('Username/password is incorrect')
+        
+        st.button("Register here", on_click=set_form, args=('register',))
+
+    elif st.session_state.form_to_show == 'register':
+        try:
+            if authenticator.register_user():
+                st.success('User registered successfully. Please log in.')
+                with open('config.yaml', 'w') as file:
+                    yaml.dump(config, file, default_flow_style=False)
+                # Switch back to login form after successful registration
+                set_form('login')
+                st.rerun()
+        except Exception as e:
+            st.error(e)
+        
+        st.button("Login here", on_click=set_form, args=('login',))
+    
+    st.stop() # Stop execution if not authenticated
+
+
 # --- Sidebar Inputs ---
 st.sidebar.header("Crisis Analysis Parameters")
+with st.sidebar:
+    st.write(f"Welcome, {st.session_state.get('name')}!")
+    authenticator.logout()
 
 ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
 st.sidebar.caption("The company name will be used for Google Trends search.")
@@ -460,23 +496,6 @@ if should_run_analysis:
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
-
-if st.session_state["authentication_status"] is False:
-    st.error('Username/password is incorrect')
-elif st.session_state["authentication_status"] is None:
-    st.warning('Please enter your username and password')
-
-# --- Registration Form ---
-if not st.session_state["authentication_status"]:
-    try:
-        if authenticator.register_user():
-            st.success('User registered successfully, please log in.')
-            # Save the updated config back to the YAML file
-            with open('config.yaml', 'w') as file:
-                yaml.dump(config, file, default_flow_style=False)
-    except Exception as e:
-        st.error(e)
-    st.stop() # Stop execution if not logged in
 
 # --- Crisis Dashboard Display ---
 if st.session_state.saved_crises:
@@ -1044,9 +1063,5 @@ if "analysis_result" in st.session_state:
 
 else:
     st.info("Enter a stock ticker and adjust the dates in the sidebar to begin your analysis.")
-
-with st.sidebar:
-    st.write(f"Welcome, {st.session_state.get('name')}!")
-    authenticator.logout()
 
 # End of app
