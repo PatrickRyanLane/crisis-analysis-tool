@@ -35,7 +35,7 @@ st.set_page_config(
 # --- User Authentication ---
 # Load config from YAML file
 with open('config.yaml') as file:
-    config = yaml.load(file, loader=yaml.SafeLoader)
+    config = yaml.load(file, Loader=yaml.SafeLoader)
 
 authenticator = stauth.Authenticate(
     config['credentials'],
