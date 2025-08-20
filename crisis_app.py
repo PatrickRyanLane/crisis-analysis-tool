@@ -60,7 +60,7 @@ if st.session_state["authentication_status"] is False:
 elif st.session_state["authentication_status"] is None:
     st.warning('Please enter your username and password')
     try:
-        if authenticator.register_user(preauthorization=False):
+        if authenticator.register_user():
             st.success('User registered successfully. Please log in.')
             with open('config.yaml', 'w') as file:
                 yaml.dump(config, file, default_flow_style=False)
