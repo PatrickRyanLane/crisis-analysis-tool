@@ -476,7 +476,19 @@ if st.session_state.saved_crises:
             )
             card.plotly_chart(trends_fig, use_container_width=True)
 
-        card.metric("Max Decline", f"{crisis['max_decline']:.1f}%")
+        max_decline_val = crisis.get('max_decline', 0)
+        if max_decline_val < 0:
+            card.metric(
+                "Max Decline",
+                f"{abs(max_decline_val):.1f}%",
+                help="The largest percentage drop from the pre-crisis average to the crisis low price."
+            )
+        else:
+            card.metric(
+                "Price Floor vs Avg",
+                f"+{max_decline_val:.1f}%",
+                help="The crisis low was this much higher than the pre-crisis average, indicating no decline below the average."
+            )
         mc_change = crisis.get('market_cap_change')
         if mc_change is not None:
             value_str = f"+${mc_change/1e9:.2f}B" if mc_change >= 0 else f"-${abs(mc_change)/1e9:.2f}B"
