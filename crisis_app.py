@@ -426,19 +426,63 @@ if st.session_state.saved_crises:
     num_crises = len(st.session_state.saved_crises)
     cols = st.columns(num_crises)
     for i, crisis in enumerate(st.session_state.saved_crises):
-        with cols[i]:
-            st.markdown(f"##### {crisis['ticker']}")
-            st.caption(f"{crisis['start_date']} to {crisis['end_date']}")
-            st.metric("Max Decline", f"{crisis['max_decline']:.1f}%")
-            
-            mc_change = crisis.get('market_cap_change')
-            if mc_change is not None:
-                if mc_change < 0:
-                    st.metric("Market Cap Change", f"-${abs(mc_change)/1e9:.2f}B")
-                else:
-                    st.metric("Market Cap Change", f"+${mc_change/1e9:.2f}B")
-            else:
-                st.metric("Market Cap Change", "N/A")
+        card = cols[i]
+        card.markdown(f"##### {crisis['ticker']}")
+        card.caption(f"{crisis['start_date']} to {crisis['end_date']} ({crisis.get('duration_days', 'N/A')} days)")
+
+        # Create and display the mini chart
+        chart_data = crisis.get('chart_data')
+        if chart_data is not None and not chart_data.empty:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=chart_data.index,
+                y=chart_data.values,
+                mode='lines',
+                line=dict(color=crisis.get('line_color', 'red'), width=2),
+                fill='tozeroy',
+                fillcolor=crisis.get('fill_color', 'rgba(220, 53, 69, 0.1)')
+            ))
+            fig.update_layout(
+                height=100,
+                margin=dict(l=0, r=0, t=5, b=0),
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                showlegend=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            card.plotly_chart(fig, use_container_width=True)
+
+        # Create and display the Google Trends mini chart
+        trends_chart_data = crisis.get('trends_chart_data')
+        if trends_chart_data is not None and not trends_chart_data.empty:
+            trends_fig = go.Figure()
+            trends_fig.add_trace(go.Scatter(
+                x=trends_chart_data.index,
+                y=trends_chart_data.values,
+                mode='lines',
+                line=dict(color='purple', width=2),
+                fill='tozeroy',
+                fillcolor='rgba(128, 0, 128, 0.2)'
+            ))
+            trends_fig.update_layout(
+                height=100,
+                margin=dict(l=0, r=0, t=5, b=0),
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                showlegend=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            card.plotly_chart(trends_fig, use_container_width=True)
+
+        card.metric("Max Decline", f"{crisis['max_decline']:.1f}%")
+        mc_change = crisis.get('market_cap_change')
+        if mc_change is not None:
+            value_str = f"+${mc_change/1e9:.2f}B" if mc_change >= 0 else f"-${abs(mc_change)/1e9:.2f}B"
+            card.metric("Market Cap Change", value_str)
+        else:
+            card.metric("Market Cap Change", "N/A")
     st.markdown("---")
 
 # -------- Main Analysis Results and Metrics -----------
@@ -505,15 +549,44 @@ if "analysis_result" in st.session_state:
 
     # --- Add to Dashboard Button ---
     if st.button("Add to Crisis Dashboard", use_container_width=True):
+        crisis_duration_days = (res['crisis_end_utc'] - res['crisis_start_utc']).days
+        chart_data = res['data'][(res['data'].index >= res['crisis_start_utc']) & (res['data'].index <= res['crisis_end_utc'])]['Close']
+        
+        # Get the trends data for the crisis period
+        trends_chart_data = None
+        if smoothed_trends is not None:
+            trends_chart_data = smoothed_trends[(smoothed_trends.index >= res['crisis_start_utc']) & (smoothed_trends.index <= res['crisis_end_utc'])]
+
+        # Determine chart color based on performance during the crisis
+        line_color = 'red'
+        fill_color = 'rgba(220, 53, 69, 0.1)'
+        if not chart_data.empty and chart_data.iloc[-1] >= chart_data.iloc[0]:
+            line_color = 'green'
+            fill_color = 'rgba(40, 167, 69, 0.1)'
+
         crisis_summary = {
             "ticker": ticker,
             "start_date": crisis_start_date.strftime("%Y-%m-%d"),
             "end_date": crisis_end_date.strftime("%Y-%m-%d"),
             "max_decline": res.get('max_decline', 0),
-            "market_cap_change": res.get('market_cap_change')
+            "market_cap_change": res.get('market_cap_change'),
+            "duration_days": crisis_duration_days,
+            "chart_data": chart_data,
+            "trends_chart_data": trends_chart_data,
+            "line_color": line_color,
+            "fill_color": fill_color
         }
-        # Avoid adding duplicates
-        if crisis_summary not in st.session_state.saved_crises:
+        
+        # Avoid adding duplicates by comparing a version of the dict without the unhashable Series
+        is_duplicate = False
+        ignore_keys = ['chart_data', 'trends_chart_data', 'line_color', 'fill_color']
+        comparable_summary = {k: v for k, v in crisis_summary.items() if k not in ignore_keys}
+        for saved_item in st.session_state.saved_crises:
+            if {k: v for k, v in saved_item.items() if k not in ignore_keys} == comparable_summary:
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
             st.session_state.saved_crises.append(crisis_summary)
             st.toast(f"Added {ticker} crisis to dashboard!", icon="✅")
             st.rerun()
