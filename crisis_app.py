@@ -9,6 +9,8 @@ import pytz
 import re
 from pytrends.request import TrendReq
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
+import streamlit_authenticator as stauth
+from database import initialize_db, save_dashboard_to_db, load_dashboard_from_db
 import nltk
 import warnings
 
@@ -20,6 +22,7 @@ def get_sentiment_analyzer():
     return SentimentIntensityAnalyzer()
 
 sia = get_sentiment_analyzer()
+initialize_db() # Ensure the database and table exist
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
@@ -27,6 +30,25 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+# --- User Authentication ---
+# Use the generate_keys.py script to create secure password hashes.
+users = {
+    "usernames": {
+        "testuser": {
+            "name": "Test User",
+            "password": "$2b$12$E.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5" # Hashed "password123"
+        },
+        "anotheruser":{
+            "name": "Another User",
+            "password": "$2b$12$H.gP9k4/vTvGk.d9gH4gA.gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5gJ5" # Hashed "password456"
+        }
+    },
+    "cookie": {"expiry_days": 30, "key": "a_secret_key", "name": "crisis_app_cookie"}
+}
+
+authenticator = stauth.Authenticate(users['usernames'], users['cookie']['name'], users['cookie']['key'], users['cookie']['expiry_days'])
+name, authentication_status, username = authenticator.login('Login', 'main')
 
 st.title("🚨 Reputational Crisis Impact Analysis Tool")
 st.markdown("**Analyze the economic impact of reputational crises on stock prices**")
@@ -70,10 +92,42 @@ if "trends_keyword_override" not in st.session_state:
     st.session_state.trends_keyword_override = ""
 if "last_analysis_params" not in st.session_state:
     st.session_state.last_analysis_params = {}
-if "saved_crises" not in st.session_state:
-    st.session_state.saved_crises = []
 
 # --- Helper functions ---
+def serialize_dashboard(dashboard):
+    """Converts pandas Series in dashboard data to JSON strings for database storage."""
+    serializable_dashboard = []
+    for crisis in dashboard:
+        new_crisis = crisis.copy()
+        if 'chart_data' in new_crisis and isinstance(new_crisis.get('chart_data'), pd.Series):
+            new_crisis['chart_data'] = new_crisis['chart_data'].to_json(orient='split')
+        if 'trends_chart_data' in new_crisis and isinstance(new_crisis.get('trends_chart_data'), pd.Series):
+            new_crisis['trends_chart_data'] = new_crisis['trends_chart_data'].to_json(orient='split')
+        serializable_dashboard.append(new_crisis)
+    return serializable_dashboard
+
+def deserialize_dashboard(serialized_dashboard):
+    """Converts JSON strings back to pandas Series after loading from the database."""
+    dashboard = []
+    for crisis in serialized_dashboard:
+        new_crisis = crisis.copy()
+        if 'chart_data' in new_crisis and isinstance(new_crisis.get('chart_data'), str):
+            new_crisis['chart_data'] = pd.read_json(new_crisis['chart_data'], orient='split', typ='series')
+        if 'trends_chart_data' in new_crisis and isinstance(new_crisis.get('trends_chart_data'), str):
+            new_crisis['trends_chart_data'] = pd.read_json(new_crisis['trends_chart_data'], orient='split', typ='series')
+        dashboard.append(new_crisis)
+    return dashboard
+
+# Load dashboard from DB after successful login
+if authentication_status:
+    if "saved_crises" not in st.session_state:
+        saved_crises_json = load_dashboard_from_db(username)
+        if saved_crises_json:
+            st.session_state.saved_crises = deserialize_dashboard(saved_crises_json)
+        else:
+            st.session_state.saved_crises = []
+
+
 def simplify_company_name(name):
     """Simplifies a company's long name to a more common search term."""
     if not isinstance(name, str):
@@ -412,10 +466,14 @@ if should_run_analysis:
         st.error(f"An error occurred: {str(e)}")
         st.write("Please check your internet connection and verify the stock ticker symbol.")
 
+if not authentication_status:
+    st.warning("Please log in to use the analysis tool.")
+    st.stop()
+
 # --- Crisis Dashboard Display ---
 if st.session_state.saved_crises:
     st.markdown("---")
-    st.subheader("📊 Crisis Dashboard")
+    st.subheader(f"📊 {name}'s Crisis Dashboard")
     
     # Allow clearing the dashboard
     if st.button("Clear Dashboard"):
@@ -604,6 +662,8 @@ if "analysis_result" in st.session_state:
 
         if not is_duplicate:
             st.session_state.saved_crises.append(crisis_summary)
+            serializable_data = serialize_dashboard(st.session_state.saved_crises)
+            save_dashboard_to_db(username, serializable_data)
             st.toast(f"Added {ticker} crisis to dashboard!", icon="✅")
             st.rerun()
         else:
@@ -974,6 +1034,9 @@ if "analysis_result" in st.session_state:
     """)
 
 else:
-    st.info("Enter a stock ticker and adjust the dates in the sidebar to begin your analysis.")
+    if authentication_status:
+        st.info("Enter a stock ticker and adjust the dates in the sidebar to begin your analysis.")
+
+authenticator.logout('Logout', 'sidebar')
 
 # End of app
