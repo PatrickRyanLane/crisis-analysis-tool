@@ -50,7 +50,7 @@ config = {
 }
 
 authenticator = stauth.Authenticate(config['credentials'], config['cookie']['name'], config['cookie']['key'], config['cookie']['expiry_days'])
-name, authentication_status, username = authenticator.login('Login', 'main')
+name, authentication_status, username = authenticator.login()
 
 st.title("🚨 Reputational Crisis Impact Analysis Tool")
 st.markdown("**Analyze the economic impact of reputational crises on stock prices**")
