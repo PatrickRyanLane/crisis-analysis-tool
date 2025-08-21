@@ -66,22 +66,14 @@ if not st.session_state.get("authentication_status"):
         st.button("Register here", on_click=set_form, args=('register',))
 
     elif st.session_state.form_to_show == 'register':
-        with st.form("Registration form"):
-            st.write("Please enter your details to register.")
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Register")
-
-            if submitted:
-                if not username or not password:
-                    st.error("Please enter a username and password.")
-                else:
-                    try:
-                        if authenticator.register_user(username, '', password):
-                            st.success("User registered successfully. Please log in.")
-                            set_form('login')
-                    except Exception as e:
-                        st.error(e)
+        try:
+            # The register_user method renders a form with fields for username, name,
+            # password, and a registration button.
+            if authenticator.register_user("Register", location="main"):
+                st.success("User registered successfully. Please log in.")
+                set_form('login')
+        except Exception as e:
+            st.error(e)
 
         st.button("Login here", on_click=set_form, args=('login',))
 
