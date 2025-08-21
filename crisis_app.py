@@ -57,7 +57,7 @@ def set_form(form_name):
 # --- Authentication Wall ---
 # If user is not logged in, show login/register forms and hide the rest of the app.
 if not st.session_state.get("authentication_status"):    
-    if st
+    if st:
         authenticator.login()
         if st.session_state["authentication_status"] is False:
             st.error('Username/password is incorrect')
