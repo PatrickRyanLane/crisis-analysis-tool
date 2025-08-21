@@ -66,15 +66,28 @@ if not st.session_state.get("authentication_status"):
         st.button("Register here", on_click=set_form, args=('register',))
 
     elif st.session_state.form_to_show == 'register':
-        try:
-            if authenticator.register_user(fields=['Username', 'Password']):
-                st.success('User registered successfully. Please log in.')
-                with open('config.yaml', 'w') as file:
-                    yaml.dump(config, file, default_flow_style=False)
-                # Switch back to login form after successful registration
-                set_form('login')
-        except Exception as e:
-            st.error(e)
+        with st.form("Registration form"):
+            st.write("Please enter your details to register.")
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Register")
+
+            if submitted:
+                if not username or not password:
+                    st.error("Please enter a username and password.")
+                else:
+                    # Hash the password
+                    hashed_password = Hasher([password]).generate()[0]
+                    # Add the new user to the config file
+                    config['credentials']['usernames'][username] = {
+                        'email': '',
+                        'name': '',
+                        'password': hashed_password
+                    }
+                    with open('config.yaml', 'w') as file:
+                        yaml.dump(config, file, default_flow_style=False)
+                    st.success("User registered successfully. Please log in.")
+                    set_form('login')
 
         st.button("Login here", on_click=set_form, args=('login',))
 
