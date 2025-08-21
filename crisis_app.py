@@ -56,8 +56,8 @@ def set_form(form_name):
 
 # --- Authentication Wall ---
 # If user is not logged in, show login/register forms and hide the rest of the app.
-if not st.session_state.get("authentication_status"):
-    if st.session_state.form_to_show == 'login':
+if not st.session_state.get("authentication_status"):    
+    if st
         authenticator.login()
         if st.session_state["authentication_status"] is False:
             st.error('Username/password is incorrect')
@@ -65,7 +65,7 @@ if not st.session_state.get("authentication_status"):
         st.button("Register here", on_click=set_form, args=('register',))
 
     elif st.session_state.form_to_show == 'register':
-        try:
+         try:
             if authenticator.register_user():
                 st.success('User registered successfully. Please log in.')
                 with open('config.yaml', 'w') as file:
