@@ -67,7 +67,7 @@ if not st.session_state.get("authentication_status"):
 
     elif st.session_state.form_to_show == 'register':
         try:
-            if authenticator.register_user():
+            if authenticator.register_user(fields=['Username', 'Password']):
                 st.success('User registered successfully. Please log in.')
                 with open('config.yaml', 'w') as file:
                     yaml.dump(config, file, default_flow_style=False)
