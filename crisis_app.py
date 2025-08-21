@@ -69,7 +69,7 @@ if not st.session_state.get("authentication_status"):
         try:
             # The register_user method renders a form with fields for username, name,
             # password, and a registration button.
-            if authenticator.register_user("Register", location="main"):
+            if authenticator.register_user(location='main', preauthorization=False):
                 st.success("User registered successfully. Please log in.")
                 set_form('login')
         except Exception as e:
