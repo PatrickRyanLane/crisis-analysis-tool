@@ -11,6 +11,7 @@ from pytrends.request import TrendReq
 import yaml
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import streamlit_authenticator as stauth
+import bcrypt
 import database
 import nltk
 import warnings
@@ -66,14 +67,38 @@ if not st.session_state.get("authentication_status"):
         st.button("Register here", on_click=set_form, args=('register',))
 
     elif st.session_state.form_to_show == 'register':
-        try:
-            # The register_user method renders a form with fields for username, name,
-            # password, and a registration button.
-            if authenticator.register_user(location='main'):
-                st.success("User registered successfully. Please log in.")
-                set_form('login')
-        except Exception as e:
-            st.error(e)
+        with st.form("Registration form"):
+            st.write("Create a new account")
+            new_username = st.text_input("Username")
+            new_password = st.text_input("Password", type="password")
+            confirm_password = st.text_input("Confirm Password", type="password")
+            submitted = st.form_submit_button("Register")
+
+            if submitted:
+                if not new_username or not new_password or not confirm_password:
+                    st.error("Please fill out all fields.")
+                elif new_password != confirm_password:
+                    st.error("Passwords do not match.")
+                elif new_username in config['credentials']['usernames']:
+                    st.error("Username already exists. Please choose another.")
+                else:
+                    # Hash the password using bcrypt
+                    hashed_password = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+
+                    # Add the new user to the config object
+                    config['credentials']['usernames'][new_username] = {
+                        'email': '',
+                        'name': new_username, # Use username as the display name
+                        'password': hashed_password
+                    }
+
+                    # Save the updated config back to the file
+                    with open('config.yaml', 'w') as file:
+                        yaml.dump(config, file, default_flow_style=False)
+
+                    st.success("User registered successfully! Please log in.")
+                    set_form('login')
+                    st.rerun()
 
         st.button("Login here", on_click=set_form, args=('login',))
 
