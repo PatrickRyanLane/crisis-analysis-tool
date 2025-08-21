@@ -73,7 +73,7 @@ if not st.session_state.get("authentication_status"):
                 # Switch back to login form after successful registration
                 set_form('login')
                 st.rerun()
-        except Exception as e:
+            except Exception as e:  # This line was causing the error
             st.error(e)
         
         st.button("Login here", on_click=set_form, args=('login',))
