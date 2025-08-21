@@ -73,9 +73,7 @@ if not st.session_state.get("authentication_status"):
                     yaml.dump(config, file, default_flow_style=False)
                 # Switch back to login form after successful registration
                 set_form('login')
-                st.rerun()
         except Exception as e:
-            # Indent this line to fix the SyntaxError
             st.error(e)
 
         st.button("Login here", on_click=set_form, args=('login',))
