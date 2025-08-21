@@ -77,7 +77,7 @@ if not st.session_state.get("authentication_status"):
                     st.error("Please enter a username and password.")
                 else:
                     # Hash the password
-                    hashed_password = stauth.Hasher([password]).generate()[0]
+                    hashed_password = authenticator.hash_password(password)
                     # Add the new user to the config file
                     config['credentials']['usernames'][username] = {
                         'email': '',
