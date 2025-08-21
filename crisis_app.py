@@ -56,16 +56,17 @@ def set_form(form_name):
 
 # --- Authentication Wall ---
 # If user is not logged in, show login/register forms and hide the rest of the app.
-if not st.session_state.get("authentication_status"):    
-    if st:
+if not st.session_state.get("authentication_status"):
+    # Correctly check which form to display based on session state
+    if st.session_state.form_to_show == 'login':
         authenticator.login()
         if st.session_state["authentication_status"] is False:
             st.error('Username/password is incorrect')
-        
+
         st.button("Register here", on_click=set_form, args=('register',))
 
     elif st.session_state.form_to_show == 'register':
-         try:
+        try:
             if authenticator.register_user():
                 st.success('User registered successfully. Please log in.')
                 with open('config.yaml', 'w') as file:
@@ -73,11 +74,12 @@ if not st.session_state.get("authentication_status"):
                 # Switch back to login form after successful registration
                 set_form('login')
                 st.rerun()
-            except Exception as e:  # This line was causing the error
+        except Exception as e:
+            # Indent this line to fix the SyntaxError
             st.error(e)
-        
+
         st.button("Login here", on_click=set_form, args=('login',))
-    
+
     st.stop() # Stop execution if not authenticated
 
 
