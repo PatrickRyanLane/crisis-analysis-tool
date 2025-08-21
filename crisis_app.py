@@ -76,18 +76,12 @@ if not st.session_state.get("authentication_status"):
                 if not username or not password:
                     st.error("Please enter a username and password.")
                 else:
-                    # Hash the password
-                    hashed_password = authenticator.hash_password(password)
-                    # Add the new user to the config file
-                    config['credentials']['usernames'][username] = {
-                        'email': '',
-                        'name': '',
-                        'password': hashed_password
-                    }
-                    with open('config.yaml', 'w') as file:
-                        yaml.dump(config, file, default_flow_style=False)
-                    st.success("User registered successfully. Please log in.")
-                    set_form('login')
+                    try:
+                        if authenticator.register_user(username, '', password):
+                            st.success("User registered successfully. Please log in.")
+                            set_form('login')
+                    except Exception as e:
+                        st.error(e)
 
         st.button("Login here", on_click=set_form, args=('login',))
 
