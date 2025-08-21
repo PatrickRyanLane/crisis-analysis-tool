@@ -44,37 +44,44 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
+st.title("🚨 Reputational Crisis Impact Analysis Tool")
+st.markdown("**Analyze the economic impact of reputational crises on stock prices**")
+
 # --- State for switching between login and register forms ---
 if 'form_to_show' not in st.session_state:
     st.session_state.form_to_show = 'login'
 
 def set_form(form_name):
     st.session_state.form_to_show = form_name
-    # No rerun needed here, the on_click handles it.
 
 # --- Authentication Wall ---
-authenticator.login()
-
-if st.session_state["authentication_status"] is False:
-    st.error('Username/password is incorrect')
-elif st.session_state["authentication_status"] is None:
-    st.warning('Please enter your username and password')
-    try:
-        if authenticator.register_user():
-            st.success('User registered successfully. Please log in.')
-            with open('config.yaml', 'w') as file:
-                yaml.dump(config, file, default_flow_style=False)
-    except Exception as e:
-        st.error(e)
-
+# If user is not logged in, show login/register forms and hide the rest of the app.
 if not st.session_state.get("authentication_status"):
-    st.stop()
+    if st.session_state.form_to_show == 'login':
+        authenticator.login()
+        if st.session_state["authentication_status"] is False:
+            st.error('Username/password is incorrect')
+        
+        st.button("Register here", on_click=set_form, args=('register',))
+
+    elif st.session_state.form_to_show == 'register':
+        try:
+            if authenticator.register_user():
+                st.success('User registered successfully. Please log in.')
+                with open('config.yaml', 'w') as file:
+                    yaml.dump(config, file, default_flow_style=False)
+                # Switch back to login form after successful registration
+                set_form('login')
+                st.rerun()
+        except Exception as e:
+            st.error(e)
+        
+        st.button("Login here", on_click=set_form, args=('login',))
+    
+    st.stop() # Stop execution if not authenticated
+
 
 # --- Main App (only runs if authenticated) ---
-
-st.title("🚨 Reputational Crisis Impact Analysis Tool")
-st.markdown("**Analyze the economic impact of reputational crises on stock prices**")
-
 
 # --- Sidebar Inputs ---
 st.sidebar.header("Crisis Analysis Parameters")
