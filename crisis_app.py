@@ -113,7 +113,7 @@ with st.sidebar:
     st.write(f"Welcome, {st.session_state.get('name')}!")
     authenticator.logout()
 
-ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value="TSLA").upper()
+ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., TSLA, AAPL)", value=st.session_state.pop("ticker_to_load", "TSLA")).upper()
 st.sidebar.caption("The company name will be used for Google Trends search.")
 
 TIMEZONE_OPTIONS = [
@@ -128,10 +128,10 @@ user_tz_str = st.sidebar.selectbox("Select Timezone for Input Dates", TIMEZONE_O
 user_timezone = pytz.timezone(user_tz_str)
 
 today = datetime.today()
-crisis_start_date = st.sidebar.date_input("Crisis Start Date", value=today - timedelta(days=90))
-crisis_end_date = st.sidebar.date_input("Crisis End Date", value=today)
+crisis_start_date = st.sidebar.date_input("Crisis Start Date", value=st.session_state.pop("start_date_to_load", today - timedelta(days=90)))
+crisis_end_date = st.sidebar.date_input("Crisis End Date", value=st.session_state.pop("end_date_to_load", today))
 
-analyze_mitigation = st.sidebar.toggle("Analyze Mitigation Period", value=True, help="Include a specific period for mitigation actions in the analysis and charts.")
+analyze_mitigation = st.sidebar.toggle("Analyze Mitigation Period", value=st.session_state.pop("analyze_mitigation_to_load", True), help="Include a specific period for mitigation actions in the analysis and charts.")
 
 if analyze_mitigation:
     mitigation_start_date = st.sidebar.date_input("Mitigation Start Date", value=crisis_end_date)
@@ -527,19 +527,33 @@ if should_run_analysis:
 if st.session_state.saved_crises:
     st.markdown("---")
     st.subheader(f"📊 {st.session_state['name']}'s Crisis Dashboard")
-    
+
     # Allow clearing the dashboard
     if st.button("Clear Dashboard"):
         st.session_state.saved_crises = []
         database.save_dashboard_to_db(st.session_state.get('username'), [])
         st.rerun()
 
+    def load_crisis_from_dashboard(crisis_data):
+        """Sets session state to load a crisis analysis into the main view."""
+        st.session_state.ticker_to_load = crisis_data['ticker']
+        st.session_state.start_date_to_load = datetime.strptime(crisis_data['start_date'], "%Y-%m-%d").date()
+        st.session_state.end_date_to_load = datetime.strptime(crisis_data['end_date'], "%Y-%m-%d").date()
+        # Mitigation details aren't saved, so disable when loading from dashboard.
+        st.session_state.analyze_mitigation_to_load = False
+
     # Display saved crises in columns
     num_crises = len(st.session_state.saved_crises)
     cols = st.columns(num_crises)
     for i, crisis in enumerate(st.session_state.saved_crises):
         card = cols[i]
-        card.markdown(f"##### {crisis['ticker']}")
+        card.button(
+            crisis['ticker'],
+            key=f"load_crisis_{i}",
+            on_click=load_crisis_from_dashboard,
+            args=(crisis,),
+            use_container_width=True
+        )
         card.caption(f"{crisis['start_date']} to {crisis['end_date']} ({crisis.get('duration_days', 'N/A')} days)")
 
         # Create and display the mini chart

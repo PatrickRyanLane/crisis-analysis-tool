@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "sosumi": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://sosumi.ai/mcp"
+      ]
+    }
+  }
+}
