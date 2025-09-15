@@ -642,7 +642,7 @@ if "analysis_result" in st.session_state:
     # Notify user if trends data failed to load
     if trends_data is None:
         search_term_used = res.get('trends_search_term', ticker)
-        st.info(f"Could not retrieve Google Trends data for '{search_term_used}'. The charts will not include the trends overlay.")
+        st.warning(f"Could not retrieve Google Trends data for '{search_term_used}'. The `pytrends` library is no longer maintained and has become unreliable.")
 
     col1, col2, col3, col4, col5 = st.columns(5)
 
